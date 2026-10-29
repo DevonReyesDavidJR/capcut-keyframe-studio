@@ -175,6 +175,9 @@ class CapCutAdapter:
                 duration_us = target_range.get("duration", 0)
                 end_us = start_us + duration_us
 
+                source_start_us = source_range.get("start", 0) if source_range else 0
+                source_duration_us = source_range.get("duration", 0) if source_range else 0
+
                 common_kf = seg.get("common_keyframes", []) or []
                 kf_summary = []
                 for kf_group in common_kf:
@@ -220,6 +223,9 @@ class CapCutAdapter:
                     "start_seconds": round(start_us / 1000000.0, 3),
                     "duration_seconds": round(duration_us / 1000000.0, 3),
                     "end_seconds": round(end_us / 1000000.0, 3),
+                    "source_start_seconds": round(source_start_us / 1000000.0, 3),
+                    "source_duration_seconds": round(source_duration_us / 1000000.0, 3),
+                    "source_start_us": source_start_us,
                     "start_us": start_us,
                     "duration_us": duration_us,
                     "end_us": end_us,

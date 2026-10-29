@@ -121,6 +121,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     return
 
             elif ext in [".mp4", ".mov", ".m4v", ".webm"]:
+                time_s = max(0.0, time_s)
                 cmd = [
                     "ffmpeg", "-y",
                     "-ss", f"{time_s:.3f}",
@@ -129,14 +130,32 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     "-vf", f"scale={width}:{height}",
                     "-f", "image2",
                     "-c:v", "mjpeg",
+                    "-strict", "-1",
                     "-q:v", str(quality),
                     "pipe:1"
                 ]
                 try:
                     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     out, _ = proc.communicate()
-                    if proc.returncode == 0 and out:
-                        if len(_frame_cache) < 400:
+                    if proc.returncode != 0 or not out:
+                        # Fallback: extract at 0.0 if seeking past duration
+                        cmd_fb = [
+                            "ffmpeg", "-y",
+                            "-ss", "0.000",
+                            "-i", file_path,
+                            "-vframes", "1",
+                            "-vf", f"scale={width}:{height}",
+                            "-f", "image2",
+                            "-c:v", "mjpeg",
+                            "-strict", "-1",
+                            "-q:v", str(quality),
+                            "pipe:1"
+                        ]
+                        proc_fb = subprocess.Popen(cmd_fb, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        out, _ = proc_fb.communicate()
+
+                    if out:
+                        if len(_frame_cache) < 500:
                             _frame_cache[cache_key] = (out, "image/jpeg")
                         self.send_response(200)
                         self.send_header("Content-Type", "image/jpeg")
@@ -144,6 +163,9 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                         self.send_header("Content-Length", str(len(out)))
                         self.end_headers()
                         self.wfile.write(out)
+                        return
+                    else:
+                        self.send_error(500, "FFmpeg failed to extract frame")
                         return
                 except Exception as e:
                     self.send_error(500, str(e))

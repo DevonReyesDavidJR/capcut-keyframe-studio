@@ -972,7 +972,9 @@ function updateMasterPreview() {
       ctx.rotate((transform.rot * Math.PI) / 180);
     }
 
-    const srcOffsetSec = relSec * (seg.speed || 1.0) + (seg.start_us / 1000000.0);
+    const srcStartSec = seg.source_start_seconds || 0;
+    const isMp4 = seg.file_path.toLowerCase().endsWith(".mp4") || seg.file_path.toLowerCase().endsWith(".mov");
+    const srcOffsetSec = isMp4 ? Math.max(0, (relSec * (seg.speed || 1.0)) + srcStartSec) : 0;
     const imgUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${srcOffsetSec.toFixed(2)}&w=360&h=640`;
 
     let img = cachedLayerImages[imgUrl];
@@ -982,14 +984,46 @@ function updateMasterPreview() {
       img.onload = () => {
         if (!isPlaying) updateMasterPreview();
       };
+      img.onerror = () => {
+        if (srcOffsetSec > 0) {
+          const fbUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=0.00&w=360&h=640`;
+          let fbImg = cachedLayerImages[fbUrl];
+          if (!fbImg) {
+            fbImg = new Image();
+            fbImg.src = fbUrl;
+            fbImg.onload = () => { if (!isPlaying) updateMasterPreview(); };
+            cachedLayerImages[fbUrl] = fbImg;
+          }
+        }
+      };
       cachedLayerImages[imgUrl] = img;
     }
 
     if (img.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, -cw / 2, -ch / 2, cw, ch);
+      const imgAspect = img.naturalWidth / img.naturalHeight;
+      const canvasAspect = cw / ch;
+      let drawW = cw;
+      let drawH = ch;
+
+      if (Math.abs(imgAspect - canvasAspect) < 0.05) {
+        drawW = cw;
+        drawH = ch;
+      } else if (imgAspect > canvasAspect) {
+        drawW = cw;
+        drawH = cw / imgAspect;
+      } else {
+        drawH = ch;
+        drawW = ch * imgAspect;
+      }
+
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     } else {
-      ctx.fillStyle = "rgba(0, 242, 254, 0.08)";
+      ctx.fillStyle = "rgba(0, 242, 254, 0.05)";
       ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      ctx.font = "10px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`⏳ Đang nạp ${seg.name.substring(0, 20)}...`, 0, 0);
     }
     ctx.restore();
   });
