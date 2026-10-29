@@ -98,6 +98,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Type", mime)
                 self.send_header("Cache-Control", "public, max-age=86400")
                 self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -113,6 +114,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     self.send_header("Content-Type", mime)
                     self.send_header("Cache-Control", "public, max-age=86400")
                     self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(data)
                     return
