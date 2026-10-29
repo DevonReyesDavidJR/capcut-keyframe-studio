@@ -52,7 +52,7 @@ Tool sử dụng **100% Python Standard Library**, **không cần cài đặt th
 
 ### 1. Tải dự án về máy
 ```bash
-git clone https://github.com/Khiemnguyen198/capcut-keyframe-studio.git
+git clone https://github.com/DevonReyesDavidJR/capcut-keyframe-studio.git
 cd capcut-keyframe-studio
 ```
 
