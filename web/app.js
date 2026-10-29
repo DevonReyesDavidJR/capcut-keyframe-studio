@@ -11,6 +11,14 @@ let stabAnchorMode = "center";
 let stabAnchorXRatio = 0.5;
 let stabAnchorYRatio = 0.5;
 let stabMode = "dead_lock";
+let playheadTime = 0.0;
+let isPlaying = false;
+let playInterval = null;
+let isLooping = true;
+let previewMode = "composite"; // "composite" or "solo"
+let trackVisibility = {}; // { trackIndex: boolean }
+let timelineZoomPxPerSec = 75;
+let cachedLayerImages = {};
 
 // Preset definitions with default parameters
 const PRESET_CONFIGS = {
@@ -210,6 +218,137 @@ function setupEventListeners() {
   document.getElementById("btnDeselectAllClips").addEventListener("click", () => {
     selectedSegments.clear();
     updateClipSelectionUI();
+  });
+
+  // Select only keyframed clips
+  document.getElementById("btnTlSelectKeyframed")?.addEventListener("click", () => {
+    if (!activeProject) return;
+    selectedSegments.clear();
+    activeProject.tracks.forEach(track => {
+      track.segments.forEach(seg => {
+        if (seg.has_keyframes) {
+          selectedSegments.add(`${track.index}_${seg.index}`);
+        }
+      });
+    });
+    updateClipSelectionUI();
+    showToast(`Đã chọn ${selectedSegments.size} clip có keyframe!`, "success");
+  });
+
+  // Timeline Zoom Controls
+  const sliderZoom = document.getElementById("sliderTlZoom");
+  if (sliderZoom) {
+    sliderZoom.addEventListener("input", (e) => {
+      timelineZoomPxPerSec = parseInt(e.target.value);
+      renderCapCutTimeline();
+      updatePlayheadPosition();
+    });
+  }
+
+  document.getElementById("btnTlZoomOut")?.addEventListener("click", () => {
+    if (sliderZoom) {
+      sliderZoom.value = Math.max(25, parseInt(sliderZoom.value) - 15);
+      timelineZoomPxPerSec = parseInt(sliderZoom.value);
+      renderCapCutTimeline();
+      updatePlayheadPosition();
+    }
+  });
+
+  document.getElementById("btnTlZoomIn")?.addEventListener("click", () => {
+    if (sliderZoom) {
+      sliderZoom.value = Math.min(250, parseInt(sliderZoom.value) + 15);
+      timelineZoomPxPerSec = parseInt(sliderZoom.value);
+      renderCapCutTimeline();
+      updatePlayheadPosition();
+    }
+  });
+
+  document.getElementById("btnTlZoomFit")?.addEventListener("click", () => {
+    if (!activeProject) return;
+    const scroller = document.getElementById("timelineLanesScroller");
+    const dur = activeProject.duration_seconds || 10;
+    if (scroller && dur > 0) {
+      const fitZoom = Math.max(25, Math.min(250, Math.floor((scroller.clientWidth - 40) / dur)));
+      if (sliderZoom) sliderZoom.value = fitZoom;
+      timelineZoomPxPerSec = fitZoom;
+      renderCapCutTimeline();
+      updatePlayheadPosition();
+    }
+  });
+
+  // Master Preview Player Controls
+  document.getElementById("btnPlayerPlayPause")?.addEventListener("click", togglePlayPause);
+  document.getElementById("btnPlayerPrevFrame")?.addEventListener("click", stepPrevFrame);
+  document.getElementById("btnPlayerNextFrame")?.addEventListener("click", stepNextFrame);
+  document.getElementById("btnPlayerStart")?.addEventListener("click", () => seekToTime(0));
+  document.getElementById("btnPlayerEnd")?.addEventListener("click", () => {
+    if (activeProject) seekToTime(activeProject.duration_seconds || 0);
+  });
+
+  document.getElementById("btnPlayerLoop")?.addEventListener("click", () => {
+    isLooping = !isLooping;
+    const btn = document.getElementById("btnPlayerLoop");
+    if (btn) btn.textContent = isLooping ? "🔁 Lặp: Bật" : "🔁 Lặp: Tắt";
+  });
+
+  document.getElementById("selectPreviewMode")?.addEventListener("change", (e) => {
+    previewMode = e.target.value;
+    updateMasterPreview();
+  });
+
+  document.getElementById("masterScrubber")?.addEventListener("input", (e) => {
+    if (!activeProject) return;
+    const dur = activeProject.duration_seconds || 10;
+    const t = (parseFloat(e.target.value) / 1000.0) * dur;
+    seekToTime(t);
+  });
+
+  // Timeline Ruler & Lanes Click/Drag to Scrub
+  const lanesArea = document.getElementById("timelineLanesArea");
+  if (lanesArea) {
+    let isScrubbing = false;
+    const scrubFromEvent = (e) => {
+      if (!activeProject) return;
+      const rect = lanesArea.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const dur = activeProject.duration_seconds || 10;
+      const t = Math.max(0, Math.min(dur, clickX / timelineZoomPxPerSec));
+      seekToTime(t);
+    };
+
+    lanesArea.addEventListener("mousedown", (e) => {
+      // If clicking directly on a clip block, let clip selection handle it
+      if (e.target.closest(".timeline-clip-block")) return;
+      isScrubbing = true;
+      scrubFromEvent(e);
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (isScrubbing) scrubFromEvent(e);
+    });
+    window.addEventListener("mouseup", () => {
+      isScrubbing = false;
+    });
+  }
+
+  // Global Keyboard Shortcuts (Space to play, Arrows to step frame)
+  window.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      togglePlayPause();
+    } else if (e.code === "ArrowLeft") {
+      e.preventDefault();
+      stepPrevFrame();
+    } else if (e.code === "ArrowRight") {
+      e.preventDefault();
+      stepNextFrame();
+    } else if (e.code === "Home") {
+      e.preventDefault();
+      seekToTime(0);
+    } else if (e.code === "End" && activeProject) {
+      e.preventDefault();
+      seekToTime(activeProject.duration_seconds || 0);
+    }
   });
 
   // Studio tabs switching
@@ -553,55 +692,443 @@ function renderProjectWorkspace() {
   document.getElementById("metaTracks").textContent = `🎞️ ${activeProject.tracks.length} Tracks`;
   document.getElementById("backupBadge").textContent = (activeProject.backups || []).length;
 
-  renderTracks();
+  // Initialize track visibility for all tracks
+  activeProject.tracks.forEach(t => {
+    if (trackVisibility[t.index] === undefined) {
+      trackVisibility[t.index] = true;
+    }
+  });
+
+  // Aspect ratio badge
+  const aspectBadge = document.getElementById("previewAspectBadge");
+  if (aspectBadge) {
+    aspectBadge.textContent = `${activeProject.canvas_width || 1080}x${activeProject.canvas_height || 1920}`;
+  }
+
+  // Duration display in player
+  const totalTimeEl = document.getElementById("playerTotalTime");
+  if (totalTimeEl) totalTimeEl.textContent = `⏱️ ${formatTimecode(activeProject.duration_seconds || 0)}`;
+
+  renderCapCutTimeline();
+  updateMasterPreview();
   updateClipSelectionUI();
 }
 
-function renderTracks() {
-  const container = document.getElementById("tracksContainer");
-  if (!activeProject || !activeProject.tracks) {
-    container.innerHTML = "";
-    return;
+function renderCapCutTimeline() {
+  if (!activeProject || !activeProject.tracks) return;
+
+  const totalDur = activeProject.duration_seconds || 10.0;
+  const lanesWidth = Math.max(900, Math.ceil(totalDur * timelineZoomPxPerSec) + 80);
+
+  // Set lanes area width
+  const lanesArea = document.getElementById("timelineLanesArea");
+  if (lanesArea) {
+    lanesArea.style.width = lanesWidth + "px";
   }
 
-  container.innerHTML = activeProject.tracks.map(track => {
-    const isVideo = track.type === "video";
-    const typeLabel = isVideo ? "Video Track" : (track.type === "audio" ? "Audio Track" : "Text/Sticker Track");
-    const badgeColor = isVideo ? "text-cyan" : (track.type === "audio" ? "text-purple" : "text-muted");
+  // Badges
+  const trackCountBadge = document.getElementById("timelineTrackCountBadge");
+  if (trackCountBadge) trackCountBadge.textContent = `${activeProject.tracks.length} Tracks`;
 
-    const segmentsHtml = track.segments.map(seg => {
-      const isSelected = selectedSegments.has(`${track.index}_${seg.index}`);
-      const hasKf = seg.has_keyframes;
-      let kfBadge = "";
-      if (hasKf) {
-        const props = seg.keyframes.map(k => k.property.replace("KFType", "")).join(", ");
-        kfBadge = `<span class="segment-kf-badge" title="Đã có keyframe: ${props}">✨ ${props}</span>`;
+  let totalClips = 0;
+  activeProject.tracks.forEach(t => totalClips += t.segments.length);
+  const clipCountBadge = document.getElementById("timelineClipCountBadge");
+  if (clipCountBadge) clipCountBadge.textContent = `${totalClips} clips`;
+
+  // Draw Time Ruler Canvas
+  const rulerCanvas = document.getElementById("timelineRulerCanvas");
+  if (rulerCanvas) {
+    rulerCanvas.width = lanesWidth;
+    rulerCanvas.height = 28;
+    const ctx = rulerCanvas.getContext("2d");
+    ctx.clearRect(0, 0, lanesWidth, 28);
+
+    // Ruler background
+    ctx.fillStyle = "#101016";
+    ctx.fillRect(0, 0, lanesWidth, 28);
+
+    // Minor ticks (every 0.2s or 0.5s) and Major ticks (every 1.0s)
+    const tickStep = timelineZoomPxPerSec > 110 ? 0.2 : (timelineZoomPxPerSec > 50 ? 0.5 : 1.0);
+    const numTicks = Math.ceil(totalDur / tickStep);
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+    ctx.font = "9px Inter, sans-serif";
+    ctx.textAlign = "left";
+
+    for (let i = 0; i <= numTicks; i++) {
+      const t = i * tickStep;
+      if (t > totalDur) break;
+      const x = Math.round(t * timelineZoomPxPerSec);
+      const isMajor = Math.abs(t - Math.round(t)) < 0.001;
+
+      ctx.beginPath();
+      if (isMajor) {
+        ctx.moveTo(x, 10);
+        ctx.lineTo(x, 28);
+        ctx.stroke();
+        ctx.fillText(`${Math.round(t)}s`, x + 3, 22);
+      } else {
+        ctx.moveTo(x, 18);
+        ctx.lineTo(x, 28);
+        ctx.stroke();
       }
+    }
+
+    // Draw Gold Beat Markers if beats are loaded
+    if (currentBeats && currentBeats.length > 0) {
+      ctx.fillStyle = "#f5a623";
+      currentBeats.forEach(beatUs => {
+        const beatSec = beatUs / 1000000.0;
+        const bx = beatSec * timelineZoomPxPerSec;
+        if (bx <= lanesWidth) {
+          ctx.beginPath();
+          ctx.moveTo(bx, 0);
+          ctx.lineTo(bx - 3, 6);
+          ctx.lineTo(bx + 3, 6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+    }
+  }
+
+  // Render Track Headers Column
+  const headersCol = document.getElementById("timelineTrackHeaders");
+  if (headersCol) {
+    const headersHtml = activeProject.tracks.map(track => {
+      const isVideo = track.type === "video";
+      const icon = isVideo ? "🎬" : (track.type === "audio" ? "🎵" : (track.type === "sticker" ? "🏷️" : "🎨"));
+      const badge = isVideo ? `V${track.index}` : (track.type === "audio" ? `A${track.index}` : `T${track.index}`);
+      const isVisible = trackVisibility[track.index] !== false;
 
       return `
-        <div class="segment-item ${isSelected ? 'selected' : ''}" onclick="toggleSegmentSelection(${track.index}, ${seg.index})">
-          <div class="segment-top">
-            <input type="checkbox" class="segment-checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSegmentSelection(${track.index}, ${seg.index})">
-            <span class="segment-duration">${seg.duration_seconds}s</span>
+        <div class="timeline-track-header-row">
+          <div class="track-header-info">
+            <span class="font-bold ${isVideo ? 'text-cyan' : (track.type === 'audio' ? 'text-purple' : 'text-muted')}">${icon} ${badge}</span>
+            <span class="text-xs text-muted" title="${track.type} track (${track.segments.length} clips)">(${track.segments.length})</span>
           </div>
-          <div class="segment-name" title="${seg.name}">${seg.name}</div>
-          ${kfBadge}
+          <div class="track-header-actions">
+            <button class="btn-eye-toggle ${isVisible ? 'active' : ''}" onclick="toggleTrackVisibility(${track.index})" title="${isVisible ? 'Ẩn lớp này khỏi Preview' : 'Hiện lớp này'}">
+              ${isVisible ? '👁️' : '👁️‍🗨️'}
+            </button>
+            ${isVideo ? `<button class="btn btn-xs btn-outline py-0 px-1 text-xs" onclick="selectTrackSegments(${track.index})" title="Chọn tất cả clip trong Track này">Chọn</button>` : ''}
+          </div>
         </div>
       `;
     }).join("");
 
-    return `
-      <div class="track-row">
-        <div class="track-header">
-          <span class="track-title ${badgeColor}">${typeLabel} ${track.index + 1} (${track.segments.length} clips)</span>
-          ${isVideo ? `<button class="btn btn-xs btn-outline" onclick="selectTrackSegments(${track.index})">Chọn tất cả Track này</button>` : ''}
-        </div>
-        <div class="segments-list">
-          ${segmentsHtml || '<p class="text-xs text-muted">Không có clip nào</p>'}
-        </div>
+    headersCol.innerHTML = `
+      <div class="timeline-ruler-header">
+        <span>Track / Layer</span>
       </div>
+      ${headersHtml}
     `;
-  }).join("");
+  }
+
+  // Render Track Lanes Stack
+  const lanesStack = document.getElementById("timelineLanesStack");
+  if (lanesStack) {
+    const lanesHtml = activeProject.tracks.map(track => {
+      const clipsHtml = track.segments.map(seg => {
+        const isSelected = selectedSegments.has(`${track.index}_${seg.index}`);
+        const leftPx = Math.round(seg.start_seconds * timelineZoomPxPerSec);
+        const widthPx = Math.max(24, Math.round(seg.duration_seconds * timelineZoomPxPerSec));
+
+        // Keyframe Diamonds HTML
+        let kfDiamondsHtml = "";
+        if (seg.has_keyframes && seg.raw_common_keyframes) {
+          const offsets = new Set();
+          seg.raw_common_keyframes.forEach(g => {
+            (g.keyframe_list || []).forEach(k => offsets.add(k.time_offset));
+          });
+          offsets.forEach(offUs => {
+            const relSec = offUs / 1000000.0;
+            const pct = Math.max(0, Math.min(100, (relSec / seg.duration_seconds) * 100));
+            kfDiamondsHtml += `<span class="timeline-kf-diamond" style="left: ${pct}%;" title="Keyframe lúc ${(seg.start_seconds + relSec).toFixed(3)}s">◆</span>`;
+          });
+        }
+
+        // Mini thumbnail on clip block
+        let thumbHtml = "";
+        if (seg.file_path) {
+          const thumbUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=0.0&w=64&h=64`;
+          thumbHtml = `<img src="${thumbUrl}" class="clip-mini-thumb" loading="lazy" onerror="this.style.display='none'">`;
+        }
+
+        const speedTag = (seg.speed && seg.speed !== 1.0) ? `<span class="badge-mini text-purple">⚡${seg.speed}x</span>` : "";
+
+        return `
+          <div class="timeline-clip-block track-${track.type} ${isSelected ? 'selected' : ''} ${seg.has_keyframes ? 'has-kf' : ''}"
+               style="left: ${leftPx}px; width: ${widthPx}px;"
+               onclick="toggleSegmentSelection(${track.index}, ${seg.index})"
+               title="${seg.name} [${seg.start_seconds}s - ${seg.end_seconds}s]${seg.has_keyframes ? ' (Có Keyframe)' : ''}">
+            ${thumbHtml}
+            <div class="clip-info-text">
+              <span class="clip-title">${seg.name}</span>
+              <span class="clip-duration-tag">${seg.duration_seconds}s ${speedTag}</span>
+            </div>
+            ${kfDiamondsHtml}
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="timeline-lane-row" style="width: ${lanesWidth}px;">
+          ${clipsHtml}
+        </div>
+      `;
+    }).join("");
+
+    lanesStack.innerHTML = lanesHtml;
+  }
+
+  updatePlayheadPosition();
+}
+
+function toggleTrackVisibility(trackIdx) {
+  trackVisibility[trackIdx] = !(trackVisibility[trackIdx] !== false);
+  renderCapCutTimeline();
+  updateMasterPreview();
+}
+
+function updateMasterPreview() {
+  if (!activeProject) return;
+
+  const canvas = document.getElementById("masterPreviewCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width;
+  const ch = canvas.height;
+
+  // Background
+  ctx.fillStyle = "#0a0a0f";
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Find active segments at playheadTime
+  const activeSegments = [];
+  const tracks = activeProject.tracks || [];
+
+  tracks.forEach(track => {
+    // If track is hidden by user, skip it
+    if (trackVisibility[track.index] === false) return;
+
+    for (const seg of track.segments) {
+      if (seg.start_seconds <= playheadTime && playheadTime <= seg.end_seconds) {
+        activeSegments.push({ track, seg });
+        break;
+      }
+    }
+  });
+
+  // Render Active Layers Chips
+  const chipsContainer = document.getElementById("activeLayersChips");
+  const countBadge = document.getElementById("activeLayersCount");
+  if (chipsContainer) {
+    if (activeSegments.length === 0) {
+      chipsContainer.innerHTML = `<span class="text-muted text-xs">Không có layer nào tại thời điểm này</span>`;
+      if (countBadge) countBadge.textContent = "0 layers";
+    } else {
+      if (countBadge) countBadge.textContent = `${activeSegments.length} layers active`;
+      chipsContainer.innerHTML = activeSegments.map(({ track, seg }) => {
+        const isVideo = track.type === "video";
+        const icon = isVideo ? "🎬" : (track.type === "audio" ? "🎵" : "🏷️");
+        const badge = isVideo ? `V${track.index}` : `A${track.index}`;
+        const isSelected = selectedSegments.has(`${track.index}_${seg.index}`);
+        const kfTag = seg.has_keyframes ? `<span class="segment-kf-badge-mini">◆ KFs</span>` : "";
+
+        return `
+          <div class="layer-chip ${isSelected ? 'selected' : ''}" onclick="toggleSegmentSelection(${track.index}, ${seg.index})">
+            <span class="layer-chip-badge">${icon} ${badge}</span>
+            <span>${seg.name}</span>
+            ${kfTag}
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  // Draw Visual Layers onto Canvas from bottom layer (Track 0) to top layer
+  activeSegments.forEach(({ track, seg }) => {
+    if (track.type !== "video" && track.type !== "sticker") return;
+
+    // If in Solo mode, only draw if this segment is selected
+    if (previewMode === "solo" && !selectedSegments.has(`${track.index}_${seg.index}`)) {
+      return;
+    }
+
+    if (!seg.file_path) return;
+
+    const relSec = Math.max(0, playheadTime - seg.start_seconds);
+    const transform = getSegmentTransformAt(seg, relSec);
+
+    const screenX = cw / 2 + transform.posX * (cw / 2);
+    const screenY = ch / 2 - transform.posY * (ch / 2);
+
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.scale(transform.scaleX, transform.scaleX);
+    if (transform.rot) {
+      ctx.rotate((transform.rot * Math.PI) / 180);
+    }
+
+    const srcOffsetSec = relSec * (seg.speed || 1.0) + (seg.start_us / 1000000.0);
+    const imgUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${srcOffsetSec.toFixed(2)}&w=360&h=640`;
+
+    let img = cachedLayerImages[imgUrl];
+    if (!img) {
+      img = new Image();
+      img.src = imgUrl;
+      img.onload = () => {
+        if (!isPlaying) updateMasterPreview();
+      };
+      cachedLayerImages[imgUrl] = img;
+    }
+
+    if (img.complete && img.naturalWidth > 0) {
+      ctx.drawImage(img, -cw / 2, -ch / 2, cw, ch);
+    } else {
+      ctx.fillStyle = "rgba(0, 242, 254, 0.08)";
+      ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+    }
+    ctx.restore();
+  });
+
+  // Timecode and Scrubber updates
+  const dur = activeProject.duration_seconds || 10.0;
+  const fps = activeProject.fps || 30;
+  const curFrame = Math.round(playheadTime * fps);
+  const totalFrames = Math.round(dur * fps);
+
+  const curTimeEl = document.getElementById("playerCurrentTime");
+  if (curTimeEl) curTimeEl.textContent = `⏱️ ${formatTimecode(playheadTime)}`;
+
+  const frameNumEl = document.getElementById("playerFrameNumber");
+  if (frameNumEl) frameNumEl.textContent = `Frame ${curFrame} / ${totalFrames}`;
+
+  const overlayText = document.getElementById("masterPreviewOverlayText");
+  if (overlayText) overlayText.textContent = formatTimecode(playheadTime);
+
+  const scrubber = document.getElementById("masterScrubber");
+  if (scrubber && dur > 0) {
+    scrubber.value = Math.round((playheadTime / dur) * 1000);
+  }
+
+  updatePlayheadPosition();
+}
+
+function getSegmentTransformAt(seg, relTimeSec) {
+  let posX = 0.0;
+  let posY = 0.0;
+  let scaleX = 1.0;
+  let rot = 0.0;
+
+  if (!seg.raw_common_keyframes || !Array.isArray(seg.raw_common_keyframes)) {
+    return { posX, posY, scaleX, rot };
+  }
+
+  const relTimeUs = Math.round(relTimeSec * 1_000_000);
+
+  for (const group of seg.raw_common_keyframes) {
+    const ptype = group.property_type;
+    const list = group.keyframe_list || [];
+    if (!list.length) continue;
+
+    let val = list[0].values?.[0] ?? 0;
+    if (relTimeUs <= list[0].time_offset) {
+      val = list[0].values?.[0] ?? 0;
+    } else if (relTimeUs >= list[list.length - 1].time_offset) {
+      val = list[list.length - 1].values?.[0] ?? 0;
+    } else {
+      for (let i = 0; i < list.length - 1; i++) {
+        const k0 = list[i];
+        const k1 = list[i + 1];
+        if (k0.time_offset <= relTimeUs && relTimeUs <= k1.time_offset) {
+          const deltaT = k1.time_offset - k0.time_offset;
+          const prog = deltaT > 0 ? (relTimeUs - k0.time_offset) / deltaT : 0;
+          const v0 = k0.values?.[0] ?? 0;
+          const v1 = k1.values?.[0] ?? 0;
+          const eased = 0.5 * (1.0 - Math.cos(prog * Math.PI));
+          val = v0 + (v1 - v0) * eased;
+          break;
+        }
+      }
+    }
+
+    if (ptype === "KFTypePositionX") posX = val;
+    else if (ptype === "KFTypePositionY") posY = val;
+    else if (ptype === "KFTypeScaleX") scaleX = val;
+    else if (ptype === "KFTypeRotation") rot = val;
+  }
+
+  return { posX, posY, scaleX, rot };
+}
+
+function formatTimecode(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 1000);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+}
+
+function togglePlayPause() {
+  if (!activeProject) return;
+  isPlaying = !isPlaying;
+  const btn = document.getElementById("btnPlayerPlayPause");
+
+  if (isPlaying) {
+    if (btn) btn.textContent = "⏸ Tạm Dừng";
+    const fps = activeProject.fps || 30;
+    const intervalMs = Math.round(1000 / fps);
+    playInterval = setInterval(() => {
+      const dur = activeProject.duration_seconds || 10.0;
+      playheadTime += 1.0 / fps;
+      if (playheadTime >= dur) {
+        if (isLooping) {
+          playheadTime = 0.0;
+        } else {
+          playheadTime = dur;
+          togglePlayPause();
+          return;
+        }
+      }
+      updateMasterPreview();
+    }, intervalMs);
+  } else {
+    if (btn) btn.textContent = "▶ Phát";
+    if (playInterval) {
+      clearInterval(playInterval);
+      playInterval = null;
+    }
+  }
+}
+
+function stepPrevFrame() {
+  if (!activeProject) return;
+  const fps = activeProject.fps || 30;
+  seekToTime(Math.max(0, playheadTime - 1.0 / fps));
+}
+
+function stepNextFrame() {
+  if (!activeProject) return;
+  const fps = activeProject.fps || 30;
+  const dur = activeProject.duration_seconds || 10.0;
+  seekToTime(Math.min(dur, playheadTime + 1.0 / fps));
+}
+
+function seekToTime(t) {
+  if (!activeProject) return;
+  const dur = activeProject.duration_seconds || 10.0;
+  playheadTime = Math.max(0, Math.min(dur, t));
+  updateMasterPreview();
+}
+
+function updatePlayheadPosition() {
+  const line = document.getElementById("timelinePlayheadLine");
+  if (line) {
+    const x = Math.round(playheadTime * timelineZoomPxPerSec);
+    line.style.transform = `translateX(${x}px)`;
+  }
 }
 
 function toggleSegmentSelection(trackIdx, segIdx) {
@@ -630,11 +1157,8 @@ function updateClipSelectionUI() {
   document.getElementById("selectedCountBtn").textContent = count;
   document.getElementById("batchTargetCount").textContent = count;
 
-  // Sync checkboxes and card selected classes
-  document.querySelectorAll(".segment-item").forEach(item => {
-    // Re-render tracks cleanly
-  });
-  renderTracks();
+  renderCapCutTimeline();
+  updateMasterPreview();
 }
 
 // ==========================================

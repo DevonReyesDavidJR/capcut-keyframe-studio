@@ -26,7 +26,18 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Whip Pan**: Gạt chuyển cảnh tốc độ cao sang trái/phải/lên/xuống.
    - **Breathing Pulse**: Nhịp thở/đập tuần hoàn êm ái.
    - **Fade Opacity**: Làm mờ dần / Hiện dần clip.
-2. **🤖 Trợ Lý AI Soi & Check Khung Hình (AI Frame Inspector & 30fps Viewport)**:
+2. **📱 Trình Phát Xem Trước Đa Lớp & Timeline CapCut Trực Quan (Multi-Layer Viewer & Timeline)**:
+   - **Màn hình Preview Đa Lớp (Composite Preview Monitor)**: Xem toàn bộ các layer video, ảnh phủ, mask, sticker chồng lên nhau tại bất kỳ khung hình nào theo đúng trục thứ tự hiển thị của CapCut.
+   - **Tắt/Bật Mắt Ẩn Hiện Lớp (👁️ Layer Visibility)**: Dễ dàng ẩn hoặc hiện từng track để soi riêng chuyển động của layer đó hoặc xem tổng thể cả video.
+   - **Phím tắt chuẩn Editor**: Bấm phím **Space** để Phát/Tạm dừng, phím **◀ / ▶** để lùi/tới từng frame (30fps/60fps) siêu mượt.
+   - **Timeline Đa Lớp Trực Quan (CapCut Multi-Track Timeline)**:
+     - Xếp chồng các track V0, V1, V2, V4... và audio A10, A14... theo trục thời gian thực.
+     - Hiển thị ảnh thumbnail thu nhỏ của từng clip trực tiếp trên thanh timeline.
+     - Hiển thị trực quan các điểm mốc **Keyframe Diamonds (Điểm kim cương `◆`)** ngay trên thanh clip để nhận biết ngay đoạn nào có chuyển động.
+     - Thanh kim Playhead đỏ quét đồng bộ theo thời gian thực khi play hoặc kéo chuột.
+     - Thanh trượt Zoom timeline và nút `Khớp (Fit)` để quan sát toàn bộ dự án 12s hoặc zoom sâu vào từng frame.
+
+3. **🤖 Trợ Lý AI Soi & Check Khung Hình (AI Frame Inspector)**:
    - **Màn hình mô phỏng chuyển động từng Frame (9:16 Preview Player)**: Xem thử chuyển động trực quan từng frame `[◀ Lùi 1 Frame]`, `[▶ Phát thử 30fps]`, `[Tới 1 Frame ▶]` hoặc kéo thanh scrubber mà không cần xuất video hay mở lại CapCut.
    - **Chấm điểm độ mượt AI (Smoothness Score 0-100)**: Tự động tính toán đạo hàm vận tốc và gia tốc giữa các frame, phát hiện điểm gắt, giật hình hoặc đảo chiều đột ngột.
    - **Soi lệch nhịp âm thanh (Beat Sync Check)**: Đối chiếu frame đỉnh chuyển động với frame âm thanh, cảnh báo nếu chuyển động chạm đích sớm hoặc muộn so với tiếng bass/kick.

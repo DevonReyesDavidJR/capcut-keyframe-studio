@@ -102,25 +102,12 @@
           </div>
         </div>
 
-        <!-- TIMELINE TRACKS INSPECTOR -->
-        <section class="section-card">
-          <div class="section-header">
-            <div class="flex items-center gap-2">
-              <h3 class="section-heading">🎞️ Danh Sách Tracks & Clips Trong Timeline</h3>
-              <span class="section-sub">(Tích chọn các clip bạn muốn áp dụng keyframe)</span>
-            </div>
-            <div class="track-quick-actions">
-              <button class="btn btn-xs btn-secondary" id="btnSelectAllClips">Chọn tất cả</button>
-              <button class="btn btn-xs btn-secondary" id="btnDeselectAllClips">Bỏ chọn</button>
-            </div>
-          </div>
-          <div class="tracks-container" id="tracksContainer">
-            <!-- Dynamic Tracks Rendered Here -->
-          </div>
-        </section>
-
-        <!-- KEYFRAME STUDIO TABS -->
-        <section class="section-card studio-card">
+        <!-- TOP SECTION: STUDIO CONTROLS + MASTER MULTI-LAYER PREVIEW MONITOR -->
+        <div class="studio-top-grid">
+          <!-- LEFT: STUDIO OPERATIONS TABS -->
+          <div class="studio-left-column">
+            <!-- KEYFRAME STUDIO TABS -->
+            <section class="section-card studio-card">
           <div class="studio-tabs">
             <button class="tab-btn active" data-tab="tabPresets">
               ⚡ Presets Chuyển Động
@@ -814,6 +801,130 @@
             </div>
           </div>
         </section>
+      </div>
+
+      <!-- RIGHT: CAPCUT MASTER MULTI-LAYER PREVIEW MONITOR -->
+      <div class="studio-right-column">
+        <section class="section-card master-preview-card">
+          <div class="master-preview-header">
+            <div class="flex items-center gap-2">
+              <h3 class="section-heading">📱 Trình Phát Đa Lớp</h3>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="selectPreviewMode" class="select-box text-xs">
+                <option value="composite">👁️ Tất cả Layer (Composite)</option>
+                <option value="solo">🎯 Chỉ Layer chọn (Solo)</option>
+              </select>
+              <span class="badge-mini text-cyan" id="previewAspectBadge">9:16</span>
+            </div>
+          </div>
+
+          <!-- 9:16 MASTER COMPOSITE CANVAS SCREEN -->
+          <div class="master-screen-box">
+            <canvas id="masterPreviewCanvas" width="270" height="480"></canvas>
+            <div id="masterPreviewOverlayText" class="master-overlay-time">00:00.000</div>
+          </div>
+
+          <!-- PLAYER CONTROLS BAR -->
+          <div class="player-controls-bar mt-3">
+            <div class="flex items-center justify-between text-xs text-muted mb-2 w-full">
+              <span id="playerCurrentTime" class="font-bold text-cyan">⏱️ 00:00.000</span>
+              <span id="playerFrameNumber" class="text-xs">Frame 0 / 0</span>
+              <span id="playerTotalTime">⏱️ 00:00.000</span>
+            </div>
+
+            <!-- MASTER TIMELINE SCRUBBER -->
+            <input type="range" id="masterScrubber" min="0" max="1000" value="0" step="1" class="range-slider w-full" title="Kéo thanh trượt để di chuyển">
+
+            <!-- BUTTONS ROW -->
+            <div class="flex items-center justify-between w-full mt-3">
+              <div class="flex items-center gap-1">
+                <button class="btn btn-xs btn-secondary" id="btnPlayerStart" title="Về đầu 0s (Home)">⏮</button>
+                <button class="btn btn-xs btn-secondary" id="btnPlayerPrevFrame" title="Lùi 1 Frame (◀)">◀ 1F</button>
+                <button class="btn btn-sm btn-primary px-3" id="btnPlayerPlayPause" title="Phát / Dừng (Space)">▶ Phát</button>
+                <button class="btn btn-xs btn-secondary" id="btnPlayerNextFrame" title="Tới 1 Frame (▶)">1F ▶</button>
+                <button class="btn btn-xs btn-secondary" id="btnPlayerEnd" title="Đến cuối (End)">⏭</button>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button class="btn btn-xs btn-outline" id="btnPlayerLoop" title="Lặp lại video">🔁 Lặp: Bật</button>
+              </div>
+            </div>
+
+            <!-- ACTIVE LAYERS PILL CHIPS (CURRENT FRAME) -->
+            <div class="active-layers-container mt-3 pt-3 border-t border-gray">
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="font-bold text-muted">Active Layers tại Frame này:</span>
+                <span class="text-hint" id="activeLayersCount">0 layers</span>
+              </div>
+              <div class="active-layers-chips" id="activeLayersChips">
+                <span class="text-muted text-xs">Chưa có layer nào tại thời điểm này</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- BOTTOM SECTION: CAPCUT-STYLE MULTI-LAYER TIMELINE -->
+    <section class="section-card timeline-master-card mt-4">
+      <div class="timeline-master-toolbar">
+        <div class="flex items-center gap-3">
+          <h3 class="section-heading">🎞️ Timeline Đa Lớp CapCut (Multi-Track Timeline)</h3>
+          <span class="badge-mini" id="timelineTrackCountBadge">0 Tracks</span>
+          <span class="text-xs text-muted" id="timelineClipCountBadge">0 clips</span>
+        </div>
+
+        <!-- TIMELINE QUICK ACTIONS & ZOOM -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1">
+            <button class="btn btn-xs btn-secondary" id="btnSelectAllClips">Chọn tất cả</button>
+            <button class="btn btn-xs btn-secondary" id="btnDeselectAllClips">Bỏ chọn</button>
+            <button class="btn btn-xs btn-purple" id="btnTlSelectKeyframed">Chỉ chọn clip có Keyframe ◆</button>
+          </div>
+
+          <div class="flex items-center gap-1 timeline-zoom-controls">
+            <button class="btn btn-xs btn-secondary" id="btnTlZoomOut" title="Thu nhỏ timeline">🔍 -</button>
+            <input type="range" id="sliderTlZoom" min="25" max="250" value="75" step="5" class="range-slider w-24" title="Tỷ lệ hiển thị timeline">
+            <button class="btn btn-xs btn-secondary" id="btnTlZoomIn" title="Phóng to timeline">🔍 +</button>
+            <button class="btn btn-xs btn-outline" id="btnTlZoomFit" title="Khớp toàn bộ project vào màn hình">Khớp (Fit)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MULTI-TRACK INTERACTIVE TIMELINE CONTAINER -->
+      <div class="timeline-viewport-wrapper mt-3">
+        <div class="timeline-grid-layout" id="timelineGridLayout">
+          <!-- Left: Track Headers (Sticky Column) -->
+          <div class="timeline-headers-col" id="timelineTrackHeaders">
+            <div class="timeline-ruler-header">
+              <span>Track / Layer</span>
+            </div>
+            <!-- Track headers injected dynamically -->
+          </div>
+
+          <!-- Right: Time Ruler + Track Lanes + Playhead Line -->
+          <div class="timeline-lanes-scroller" id="timelineLanesScroller">
+            <div class="timeline-lanes-canvas-area" id="timelineLanesArea">
+              <!-- Time Ruler Row -->
+              <div class="timeline-ruler-bar" id="timelineRulerBar">
+                <canvas id="timelineRulerCanvas" height="28"></canvas>
+              </div>
+
+              <!-- Vertical Playhead Line (Spans down across all tracks) -->
+              <div class="timeline-playhead-line" id="timelinePlayheadLine">
+                <div class="playhead-handle">▼</div>
+              </div>
+
+              <!-- Track Lanes Stack -->
+              <div class="timeline-lanes-stack" id="timelineLanesStack">
+                <!-- Dynamic horizontal track lanes and clips rendered here -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
       </div>
     </main>
   </div>

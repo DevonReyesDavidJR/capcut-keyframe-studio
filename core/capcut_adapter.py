@@ -249,6 +249,10 @@ class CapCutAdapter:
                 "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(b_stat.st_mtime))
             })
 
+        canvas_cfg = data.get("canvas_config", {})
+        c_w = canvas_cfg.get("width") or 1080
+        c_h = canvas_cfg.get("height") or 1920
+
         return {
             "name": data.get("name", folder_name),
             "folder_name": folder_name,
@@ -256,6 +260,9 @@ class CapCutAdapter:
             "info_file": info_file,
             "fps": data.get("fps", 30),
             "duration_seconds": round(data.get("duration", 0) / 1000000.0, 2),
+            "canvas_width": c_w,
+            "canvas_height": c_h,
+            "canvas_ratio": canvas_cfg.get("ratio", "9:16"),
             "tracks": parsed_tracks,
             "backups": backups
         }

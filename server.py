@@ -8,6 +8,7 @@ import sys
 import json
 import time
 import urllib.parse
+import subprocess
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -25,6 +26,7 @@ from core.speed_ramp_engine import SpeedRampEngine
 from core.stabilizer_engine import StabilizerEngine
 
 adapter = CapCutAdapter()
+_frame_cache: Dict[str, Any] = {}
 
 class CapCutAPIHandler(SimpleHTTPRequestHandler):
     """Handles REST API calls and serves static Web UI assets."""
@@ -74,6 +76,80 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     self.wfile.write(f.read())
                 return
             self.send_error(404, "Filmstrip not found")
+            return
+
+        # Serve Media Frame / Thumbnail
+        if path == "/api/media_frame":
+            file_path = params.get("path", [""])[0]
+            time_s = float(params.get("t", [0.0])[0])
+            width = int(params.get("w", [160])[0])
+            height = int(params.get("h", [90])[0])
+            quality = int(params.get("q", [6])[0])
+
+            if not file_path or not os.path.exists(file_path):
+                self.send_error(404, "Media file not found")
+                return
+
+            ext = os.path.splitext(file_path)[1].lower()
+            cache_key = f"{file_path}_{time_s:.2f}_{width}_{height}"
+            if cache_key in _frame_cache:
+                data, mime = _frame_cache[cache_key]
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
+            if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+                try:
+                    with open(file_path, "rb") as f:
+                        data = f.read()
+                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    if len(_frame_cache) < 400:
+                        _frame_cache[cache_key] = (data, mime)
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime)
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                except Exception as e:
+                    self.send_error(500, str(e))
+                    return
+
+            elif ext in [".mp4", ".mov", ".m4v", ".webm"]:
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-ss", f"{time_s:.3f}",
+                    "-i", file_path,
+                    "-vframes", "1",
+                    "-vf", f"scale={width}:{height}",
+                    "-f", "image2",
+                    "-c:v", "mjpeg",
+                    "-q:v", str(quality),
+                    "pipe:1"
+                ]
+                try:
+                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    out, _ = proc.communicate()
+                    if proc.returncode == 0 and out:
+                        if len(_frame_cache) < 400:
+                            _frame_cache[cache_key] = (out, "image/jpeg")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Cache-Control", "public, max-age=86400")
+                        self.send_header("Content-Length", str(len(out)))
+                        self.end_headers()
+                        self.wfile.write(out)
+                        return
+                except Exception as e:
+                    self.send_error(500, str(e))
+                    return
+
+            self.send_error(400, "Unsupported media type")
             return
 
         # API: List Projects
