@@ -24,3 +24,4 @@ echo [ERROR] Khong tim thay Python. Vui long cai dat Python 3 tu https://www.pyt
 pause
 
 :end
+

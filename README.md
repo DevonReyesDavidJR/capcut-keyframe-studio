@@ -15,7 +15,10 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
 
 **CapCut Keyframe Studio Pro** là giải pháp hoàn chỉnh giúp can thiệp trực tiếp và an toàn vào cấu trúc `draft_info.json` của CapCut Desktop, mang lại những tính năng mà CapCut chưa hỗ trợ sẵn:
 
-1. **⚡ Presets Chuyển Động Điện Ảnh**:
+1. **⚡ Presets Chuyển Động Chuyên Biệt Cho Rhythmic Switch & Beat:**
+   - **Switch In (Vút Vào Đàn Hồi)**: Đối tượng/sản phẩm bay vút vào từ dưới lên (hoặc từ trên/trái/phải) với gia tốc Ease-out và độ nảy nhẹ (overshoot), sau đó đứng yên chuẩn xác ở vị trí mong muốn (như trong các clip đổi trang phục, đổi sản phẩm Halloween edit).
+   - **Switch Out (Vút Xuống Rời Khung)**: Lao nhanh ra khỏi màn hình ở cuối phân đoạn nhịp.
+   - **Rhythmic Step (Nhịp Đều 1s / 2s / 0.8s)**: Tự động lặp lại nấc giật hoặc nảy nhịp theo chu kỳ thời gian cố định mà không cần chỉnh tay từng đoạn.
    - **Smooth Zoom In / Out**: Phóng to/thu nhỏ mượt mà với đường cong Bezier (`FreeCurveInOut`).
    - **Camera Shake**: Rung lắc máy quay giật nảy phong cách Hip-hop / Điện ảnh với tần số và biên độ tùy chỉnh.
    - **Slow Pan (Ken Burns)**: Trôi nhẹ khung hình cho b-roll và ảnh tĩnh.

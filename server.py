@@ -283,6 +283,33 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                         fade_type=params.get("fade_type", "in"),
                         fade_duration_ms=int(params.get("fade_duration_ms", 500))
                     )
+                elif preset_name == "rhythmic_switch_entrance":
+                    new_kf_groups = KeyframeEngine.preset_rhythmic_switch_entrance(
+                        duration_us=dur_us,
+                        direction=params.get("direction", "up"),
+                        target_pos=float(params.get("target_pos", -0.50)),
+                        offscreen_pos=float(params.get("offscreen_pos", -1.60)),
+                        transition_duration_ms=int(params.get("transition_duration_ms", 250)),
+                        overshoot=float(params.get("overshoot", 0.08)),
+                        fps=int(data.get("fps", 30))
+                    )
+                elif preset_name == "rhythmic_switch_exit":
+                    new_kf_groups = KeyframeEngine.preset_rhythmic_switch_exit(
+                        duration_us=dur_us,
+                        direction=params.get("direction", "down"),
+                        current_pos=float(params.get("current_pos", -0.50)),
+                        offscreen_pos=float(params.get("offscreen_pos", -1.60)),
+                        transition_duration_ms=int(params.get("transition_duration_ms", 200)),
+                        fps=int(data.get("fps", 30))
+                    )
+                elif preset_name == "rhythmic_pulse_step":
+                    new_kf_groups = KeyframeEngine.preset_rhythmic_pulse_step(
+                        duration_us=dur_us,
+                        interval_seconds=float(params.get("interval_seconds", 1.0)),
+                        motion_type=params.get("motion_type", "bounce"),
+                        bounce_scale=float(params.get("bounce_scale", 1.15)),
+                        bounce_duration_ms=int(params.get("bounce_duration_ms", 150))
+                    )
 
                 if new_kf_groups:
                     self._apply_groups_to_segment(seg, new_kf_groups, replace_existing)

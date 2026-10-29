@@ -17,3 +17,4 @@ else
     echo "❌ Lỗi: Không tìm thấy Python 3 trên máy của bạn. Vui lòng cài đặt Python 3."
     exit 1
 fi
+

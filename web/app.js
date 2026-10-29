@@ -3,12 +3,61 @@
 let currentProjects = [];
 let activeProject = null;
 let selectedSegments = new Set(); // Stores composite keys: "trackIdx_segIdx"
-let activePreset = "smooth_zoom_in";
+let activePreset = "rhythmic_switch_entrance";
 let currentBeats = [];
 let audioFile = "";
 
 // Preset definitions with default parameters
 const PRESET_CONFIGS = {
+  rhythmic_switch_entrance: {
+    name: "Switch In (Vút Vào Đàn Hồi)",
+    curveMode: "Cubic Ease-Out + Spring Overshoot",
+    params: [
+      { id: "direction", label: "Hướng bay vào (Direction)", type: "select", options: [
+        { value: "up", text: "Dưới vút lên (như clip Halloween)" },
+        { value: "down", text: "Trên vút xuống" },
+        { value: "right", text: "Trái vút sang phải" },
+        { value: "left", text: "Phải vút sang trái" }
+      ], default: "up" },
+      { id: "target_pos", label: "Vị trí dừng hiển thị (Target Pos)", type: "range", min: -1.0, max: 1.0, step: 0.05, default: -0.50, unit: "" },
+      { id: "transition_duration_ms", label: "Thời gian vút vào (Duration)", type: "range", min: 100, max: 600, step: 25, default: 250, unit: " ms" },
+      { id: "overshoot", label: "Độ nảy đàn hồi (Overshoot Bounce)", type: "range", min: 0.0, max: 0.25, step: 0.02, default: 0.08, unit: "" }
+    ]
+  },
+  rhythmic_switch_exit: {
+    name: "Switch Out (Vút Xuống Rời Khung)",
+    curveMode: "Power-2.5 Accelerated Exit",
+    params: [
+      { id: "direction", label: "Hướng vút ra", type: "select", options: [
+        { value: "down", text: "Vút xuống dưới (như clip Halloween)" },
+        { value: "up", text: "Vút lên trên" },
+        { value: "left", text: "Vút sang trái" },
+        { value: "right", text: "Vút sang phải" }
+      ], default: "down" },
+      { id: "current_pos", label: "Vị trí đang đứng ban đầu", type: "range", min: -1.0, max: 1.0, step: 0.05, default: -0.50, unit: "" },
+      { id: "transition_duration_ms", label: "Thời gian vút ra ở cuối clip", type: "range", min: 100, max: 500, step: 25, default: 200, unit: " ms" }
+    ]
+  },
+  rhythmic_pulse_step: {
+    name: "Rhythmic Step (Nhịp Đều 1s / 2s / Beat)",
+    curveMode: "Periodic Step Pulse",
+    params: [
+      { id: "interval_seconds", label: "Chu kỳ nhịp (Interval)", type: "select", options: [
+        { value: "0.5", text: "Mỗi 0.5 giây (Rất nhanh)" },
+        { value: "0.8", text: "Mỗi 0.8 giây (Chuẩn clip Halloween)" },
+        { value: "1.0", text: "Mỗi 1.0 giây (Nhịp 1s phổ biến)" },
+        { value: "1.5", text: "Mỗi 1.5 giây" },
+        { value: "2.0", text: "Mỗi 2.0 giây (Nhịp 2s)" },
+        { value: "3.0", text: "Mỗi 3.0 giây" }
+      ], default: "1.0" },
+      { id: "motion_type", label: "Kiểu phản hồi nhịp", type: "select", options: [
+        { value: "bounce", text: "Nảy phóng to (Scale Bounce)" },
+        { value: "slide_up", text: "Nấc giật lên (Step Bump Up)" }
+      ], default: "bounce" },
+      { id: "bounce_scale", label: "Cường độ nảy (Scale Peak)", type: "range", min: 1.05, max: 1.40, step: 0.02, default: 1.15, unit: "x" },
+      { id: "bounce_duration_ms", label: "Thời gian 1 lần nảy", type: "range", min: 80, max: 300, step: 10, default: 150, unit: " ms" }
+    ]
+  },
   smooth_zoom_in: {
     name: "Smooth Zoom In",
     curveMode: "FreeCurveInOut (Bezier)",
@@ -528,7 +577,65 @@ function drawCurvePreview() {
   const plotW = w - padX * 2;
   const plotH = h - padY * 2;
 
-  if (activePreset === "smooth_zoom_in" || activePreset === "smooth_zoom_out") {
+  if (activePreset === "rhythmic_switch_entrance") {
+    // Entrance with overshoot and settling
+    ctx.moveTo(padX, h - padY);
+    const steps = 60;
+    const peakX = padX + plotW * 0.4;
+    const peakY = padY + plotH * 0.15; // overshoots past target
+    const targetY = padY + plotH * 0.35; // settles at target
+    for (let i = 0; i <= steps; i++) {
+      const progress = i / steps;
+      const x = padX + progress * plotW;
+      let y;
+      if (progress < 0.4) {
+        const p = progress / 0.4;
+        const eased = 1.0 - Math.pow(1.0 - p, 3);
+        y = (h - padY) + (peakY - (h - padY)) * eased;
+      } else if (progress < 0.6) {
+        const p = (progress - 0.4) / 0.2;
+        const eased = 0.5 * (1.0 - Math.cos(p * Math.PI));
+        y = peakY + (targetY - peakY) * eased;
+      } else {
+        y = targetY;
+      }
+      ctx.lineTo(x, y);
+    }
+  } else if (activePreset === "rhythmic_switch_exit") {
+    // Steady then steep plunge exit
+    ctx.moveTo(padX, padY + plotH * 0.35);
+    const steps = 60;
+    const startExitX = padX + plotW * 0.6;
+    const targetY = padY + plotH * 0.35;
+    const endY = h - padY;
+    for (let i = 0; i <= steps; i++) {
+      const progress = i / steps;
+      const x = padX + progress * plotW;
+      let y;
+      if (progress < 0.6) {
+        y = targetY;
+      } else {
+        const p = (progress - 0.6) / 0.4;
+        const eased = Math.pow(p, 2.5);
+        y = targetY + (endY - targetY) * eased;
+      }
+      ctx.lineTo(x, y);
+    }
+  } else if (activePreset === "rhythmic_pulse_step") {
+    // Repeating periodic pulses
+    ctx.moveTo(padX, h - padY);
+    const numPulses = 3;
+    for (let p = 0; p < numPulses; p++) {
+      const startX = padX + (p / numPulses) * plotW;
+      const midX = startX + (0.5 / numPulses) * plotW * 0.4;
+      const endX = startX + (1.0 / numPulses) * plotW * 0.4;
+      const restX = padX + ((p + 1) / numPulses) * plotW;
+      ctx.lineTo(startX, h - padY);
+      ctx.lineTo(midX, padY + plotH * 0.2);
+      ctx.lineTo(endX, h - padY);
+      ctx.lineTo(restX, h - padY);
+    }
+  } else if (activePreset === "smooth_zoom_in" || activePreset === "smooth_zoom_out") {
     const isOut = activePreset === "smooth_zoom_out";
     const startY = isOut ? padY : h - padY;
     const endY = isOut ? h - padY : padY;
@@ -1044,3 +1151,4 @@ function showToast(message, type = "success") {
     toast.classList.add("hidden");
   }, 3500);
 }
+

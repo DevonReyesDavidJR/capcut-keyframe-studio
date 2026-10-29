@@ -54,6 +54,191 @@ class KeyframeEngine:
         }
 
     # ==========================================
+    # RHYTHMIC SWITCH PRESETS (Dành cho clip switch 1s, 2s, 0.8s, Halloween & Garment edit)
+    # ==========================================
+
+    @classmethod
+    def preset_rhythmic_switch_entrance(
+        cls,
+        duration_us: int,
+        direction: str = "up",          # "up" (dưới vút lên), "down" (trên vút xuống), "left", "right"
+        target_pos: float = -0.50,      # Vị trí dừng hiển thị trên màn hình
+        offscreen_pos: float = -1.60,   # Vị trí ngoài màn hình
+        transition_duration_ms: int = 250, # Thời gian vút vào (ms)
+        overshoot: float = 0.08,        # Độ nảy đàn hồi (overshoot)
+        fps: int = 30
+    ) -> List[Dict[str, Any]]:
+        """
+        Chuỗi keyframe vút vào mượt mà với độ nảy đàn hồi chuẩn xác (như clip switch - Halloween edit final1).
+        """
+        prop = "KFTypePositionY" if direction in ["up", "down"] else "KFTypePositionX"
+        trans_us = min(duration_us, transition_duration_ms * 1000)
+        settle_us = int(trans_us * 0.4)
+        peak_us = trans_us - settle_us
+
+        # Tính toán hướng và điểm overshoot
+        start_val = offscreen_pos if direction in ["up", "right"] else -offscreen_pos
+        # Peak overshoot: nảy lố qua vị trí target một chút rồi nhún lại
+        if direction in ["up", "right"]:
+            peak_val = target_pos + overshoot
+        else:
+            peak_val = target_pos - overshoot
+
+        frame_step_us = int(1_000_000 / fps)
+        kfs = []
+
+        # Tạo chuỗi keyframe frame-by-frame trong giai đoạn vút để đạt độ mượt tuyệt đối (chuẩn CapCut Desktop)
+        cur_t = 0
+        while cur_t <= trans_us:
+            if cur_t <= peak_us:
+                # Giai đoạn vút nhanh vào (Ease-out cubic)
+                progress = cur_t / float(peak_us) if peak_us > 0 else 1.0
+                eased = 1.0 - math.pow(1.0 - progress, 3)
+                val = start_val + (peak_val - start_val) * eased
+            else:
+                # Giai đoạn nhún nhẹ về vị trí target (Ease-in-out)
+                sub_prog = (cur_t - peak_us) / float(settle_us) if settle_us > 0 else 1.0
+                eased = 0.5 * (1.0 - math.cos(sub_prog * math.pi))
+                val = peak_val + (target_pos - peak_val) * eased
+
+            kfs.append(cls.create_single_keyframe(cur_t, round(val, 4), curve_type="Line"))
+            cur_t += frame_step_us
+
+        # Đảm bảo điểm kết thúc giai đoạn vút đạt chuẩn target_pos
+        if not kfs or kfs[-1]["time_offset"] != trans_us:
+            kfs.append(cls.create_single_keyframe(trans_us, target_pos, curve_type="Line"))
+
+        # Giữ nguyên target_pos cho đến hết thời lượng của clip
+        if trans_us < duration_us:
+            kfs.append(cls.create_single_keyframe(duration_us, target_pos, curve_type="Line"))
+
+        # Đi kèm giữ nguyên trục còn lại ở 0.0 và xoay ở 0.0
+        other_prop = "KFTypePositionX" if prop == "KFTypePositionY" else "KFTypePositionY"
+        other_kfs = [
+            cls.create_single_keyframe(0, 0.0, curve_type="Line"),
+            cls.create_single_keyframe(duration_us, 0.0, curve_type="Line")
+        ]
+        rot_kfs = [
+            cls.create_single_keyframe(0, 0.0, curve_type="Line"),
+            cls.create_single_keyframe(duration_us, 0.0, curve_type="Line")
+        ]
+
+        return [
+            cls.create_property_group(prop, kfs),
+            cls.create_property_group(other_prop, other_kfs),
+            cls.create_property_group("KFTypeRotation", rot_kfs)
+        ]
+
+    @classmethod
+    def preset_rhythmic_switch_exit(
+        cls,
+        duration_us: int,
+        direction: str = "down",         # "down" (vút xuống), "up", "left", "right"
+        current_pos: float = -0.50,     # Vị trí đang đứng
+        offscreen_pos: float = -1.60,   # Vị trí rời khỏi màn hình
+        transition_duration_ms: int = 200, # Thời gian vút ra ở cuối clip (ms)
+        fps: int = 30
+    ) -> List[Dict[str, Any]]:
+        """
+        Chuỗi keyframe vút ra khỏi màn hình ở cuối clip (như Track 4 trong Halloween edit).
+        """
+        prop = "KFTypePositionY" if direction in ["up", "down"] else "KFTypePositionX"
+        trans_us = min(duration_us, transition_duration_ms * 1000)
+        start_trans_t = max(0, duration_us - trans_us)
+        end_val = offscreen_pos if direction in ["down", "left"] else -offscreen_pos
+
+        frame_step_us = int(1_000_000 / fps)
+        kfs = []
+
+        # Giữ nguyên vị trí ban đầu đến khi bắt đầu transition
+        kfs.append(cls.create_single_keyframe(0, current_pos, curve_type="Line"))
+        if start_trans_t > 0:
+            kfs.append(cls.create_single_keyframe(start_trans_t, current_pos, curve_type="Line"))
+
+        # Giai đoạn vút ra với gia tốc nhanh dần (Ease-in quadratic/cubic)
+        cur_t = start_trans_t
+        while cur_t <= duration_us:
+            progress = (cur_t - start_trans_t) / float(trans_us) if trans_us > 0 else 1.0
+            eased = math.pow(progress, 2.5)  # Lao nhanh dần ra khỏi màn hình
+            val = current_pos + (end_val - current_pos) * eased
+            kfs.append(cls.create_single_keyframe(cur_t, round(val, 4), curve_type="Line"))
+            cur_t += frame_step_us
+
+        if kfs[-1]["time_offset"] < duration_us:
+            kfs.append(cls.create_single_keyframe(duration_us, end_val, curve_type="Line"))
+
+        other_prop = "KFTypePositionX" if prop == "KFTypePositionY" else "KFTypePositionY"
+        other_kfs = [
+            cls.create_single_keyframe(0, 0.0, curve_type="Line"),
+            cls.create_single_keyframe(duration_us, 0.0, curve_type="Line")
+        ]
+
+        return [
+            cls.create_property_group(prop, kfs),
+            cls.create_property_group(other_prop, other_kfs)
+        ]
+
+    @classmethod
+    def preset_rhythmic_pulse_step(
+        cls,
+        duration_us: int,
+        interval_seconds: float = 1.0,  # Nhịp 1s, 2s, 0.8s...
+        motion_type: str = "bounce",    # "bounce" (nảy phóng to), "slide_up", "shake"
+        bounce_scale: float = 1.15,
+        bounce_duration_ms: int = 150
+    ) -> List[Dict[str, Any]]:
+        """
+        Tạo chuỗi keyframe chuyển động lặp lại theo nhịp đều đặn (mỗi 1s, 2s...) trên một clip dài.
+        """
+        step_us = int(interval_seconds * 1_000_000)
+        if step_us <= 0:
+            step_us = 1_000_000
+
+        pulse_us = bounce_duration_ms * 1000
+        attack_us = int(pulse_us * 0.35)
+        decay_us = pulse_us - attack_us
+
+        scale_kfs = []
+        pos_y_kfs = []
+
+        scale_kfs.append(cls.create_single_keyframe(0, 1.0, curve_type="Line"))
+        if motion_type == "slide_up":
+            pos_y_kfs.append(cls.create_single_keyframe(0, 0.0, curve_type="Line"))
+
+        cur_beat_t = 0
+        while cur_beat_t < duration_us:
+            t_start = max(0, cur_beat_t - attack_us)
+            t_peak = cur_beat_t
+            t_end = min(duration_us, cur_beat_t + decay_us)
+
+            if motion_type == "bounce":
+                scale_kfs.append(cls.create_single_keyframe(t_start, 1.0, curve_type="FreeCurveInOut"))
+                scale_kfs.append(cls.create_single_keyframe(t_peak, bounce_scale, curve_type="FreeCurveInOut"))
+                scale_kfs.append(cls.create_single_keyframe(t_end, 1.0, curve_type="FreeCurveInOut"))
+            elif motion_type == "slide_up":
+                scale_kfs.append(cls.create_single_keyframe(t_start, 1.0, curve_type="FreeCurveInOut"))
+                scale_kfs.append(cls.create_single_keyframe(t_peak, 1.05, curve_type="FreeCurveInOut"))
+                scale_kfs.append(cls.create_single_keyframe(t_end, 1.0, curve_type="FreeCurveInOut"))
+
+                pos_y_kfs.append(cls.create_single_keyframe(t_start, 0.0, curve_type="FreeCurveInOut"))
+                pos_y_kfs.append(cls.create_single_keyframe(t_peak, 0.06, curve_type="FreeCurveInOut"))
+                pos_y_kfs.append(cls.create_single_keyframe(t_end, 0.0, curve_type="FreeCurveInOut"))
+
+            cur_beat_t += step_us
+
+        # Hold end
+        if scale_kfs[-1]["time_offset"] < duration_us:
+            scale_kfs.append(cls.create_single_keyframe(duration_us, 1.0, curve_type="Line"))
+        if pos_y_kfs and pos_y_kfs[-1]["time_offset"] < duration_us:
+            pos_y_kfs.append(cls.create_single_keyframe(duration_us, 0.0, curve_type="Line"))
+
+        groups = [cls.create_property_group("KFTypeScaleX", scale_kfs)]
+        if pos_y_kfs:
+            groups.append(cls.create_property_group("KFTypePositionY", pos_y_kfs))
+
+        return groups
+
+    # ==========================================
     # PRESETS GENERATOR
     # ==========================================
 
