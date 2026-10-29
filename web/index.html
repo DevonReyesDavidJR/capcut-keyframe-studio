@@ -137,6 +137,9 @@
             <button class="tab-btn text-purple" data-tab="tabSpeedRamp">
               ⚡ Speed Ramping (Uốn Tốc Độ)
             </button>
+            <button class="tab-btn text-cyan" data-tab="tabStabilizer">
+              🎯 Chống Rung Khóa Mốc (Stabilizer)
+            </button>
             <button class="tab-btn" data-tab="tabCurves">
               📈 Làm Mượt Easing
             </button>
@@ -636,6 +639,126 @@
                       🔄 Khôi Phục Tốc Độ Chuẩn (1.0x)
                     </button>
                     <p class="text-hint text-center mt-2">Thời lượng clip trên timeline sẽ được tự động tính toán lại khớp tuyệt đối.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: POINT-LOCK STABILIZER -->
+          <div class="tab-pane" id="tabStabilizer">
+            <div class="stabilizer-layout">
+              <!-- LEFT: ANCHOR TARGET SELECTION & CANVAS PICKER -->
+              <div class="stabilizer-anchor-card">
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="subheading">🎯 1. Chọn Điểm Mốc Khóa Trục Cố Định</h4>
+                  <span class="badge-mini text-cyan" id="stabAnchorDisplay">Tâm (50%, 50%)</span>
+                </div>
+
+                <!-- PRESET ANCHOR BUTTONS -->
+                <div class="grid grid-cols-4 gap-2 mb-3">
+                  <button class="btn btn-xs btn-primary anchor-btn active" data-anchor="center">
+                    🎯 Tâm Giữa
+                  </button>
+                  <button class="btn btn-xs btn-secondary anchor-btn" data-anchor="face">
+                    👤 Mặt / Đầu
+                  </button>
+                  <button class="btn btn-xs btn-secondary anchor-btn" data-anchor="chest">
+                    👕 Áo / Logo
+                  </button>
+                  <button class="btn btn-xs btn-secondary anchor-btn" data-anchor="custom">
+                    🖱️ Tùy Chọn
+                  </button>
+                </div>
+
+                <!-- INTERACTIVE CANVAS WITH CROSSHAIR TARGET -->
+                <div class="anchor-canvas-container">
+                  <div class="screen-canvas-box stabilizer-canvas-box">
+                    <canvas id="stabilizerCanvas" width="270" height="480"></canvas>
+                    <div class="canvas-hint-overlay">Bấm vào khung hình để di chuyển tâm mốc 🎯</div>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs text-muted mt-3">
+                  <span>Tọa độ mốc:</span>
+                  <span id="stabCoordDisplay" class="font-bold text-cyan">X: 50.0% | Y: 50.0%</span>
+                  <button class="btn btn-xs btn-outline" id="btnResetAnchor">Đặt lại tâm</button>
+                </div>
+              </div>
+
+              <!-- RIGHT: STABILIZATION PARAMETERS & EXECUTION -->
+              <div class="stabilizer-controls-card">
+                <div class="control-box">
+                  <h4 class="control-box-title">⚙️ 2. Chế Độ Chống Rung & Tự Động Phóng To (Auto-Zoom)</h4>
+
+                  <!-- STABILIZATION MODE SELECTION -->
+                  <div class="grid grid-cols-2 gap-3 mt-3">
+                    <div class="stab-mode-card active" data-stab-mode="dead_lock">
+                      <div class="text-xl mb-1">🔒</div>
+                      <div class="font-bold text-sm">Khóa Trục Cứng 100%</div>
+                      <div class="text-xs text-muted mt-1">Giữ điểm mốc đứng im tại tọa độ chuẩn, triệt tiêu 100% rung lắc máy quay.</div>
+                    </div>
+
+                    <div class="stab-mode-card" data-stab-mode="smooth">
+                      <div class="text-xl mb-1">🌊</div>
+                      <div class="font-bold text-sm">Khử Rung Mượt Mà</div>
+                      <div class="text-xs text-muted mt-1">Lọc rung giật tay cầm, vẫn giữ lại chuyển động lia máy (pan/tilt) tự nhiên.</div>
+                    </div>
+                  </div>
+
+                  <!-- SMOOTH WINDOW SLIDER (VISIBLE WHEN SMOOTH MODE ACTIVE) -->
+                  <div id="stabSmoothWindowGroup" class="slider-row mt-4 hidden">
+                    <div class="slider-header">
+                      <span>Độ mượt mà (Smoothing Window):</span>
+                      <span id="stabSmoothWinVal" class="slider-value">15 frames</span>
+                    </div>
+                    <input type="range" id="sliderStabSmoothWin" min="5" max="45" step="5" value="15" class="range-slider">
+                  </div>
+
+                  <!-- AUTO-ZOOM CROP PROTECTION -->
+                  <div class="mt-4 p-3 bg-card-alt rounded border border-gray">
+                    <div class="flex items-center justify-between">
+                      <span class="text-sm font-bold">🔍 Tự Động Phóng To Giữ Khung Hình (Auto-Zoom):</span>
+                      <span class="badge-mini text-cyan" id="stabAutoZoomBadge">Tự Động Bù Biên</span>
+                    </div>
+                    <p class="text-xs text-muted mt-1">
+                      Khi bù rung, khung hình sẽ dịch chuyển theo chiều ngược lại. Tool tự động tính toán độ phóng to (Scale) tối thiểu để cảnh quay luôn lấp đầy màn hình, <strong>không bao giờ bị hở viền đen</strong>.
+                    </p>
+
+                    <div class="slider-row mt-3">
+                      <div class="slider-header">
+                        <span>Độ Zoom tối thiểu (Min Zoom Floor):</span>
+                        <span id="stabMinZoomVal" class="slider-value">1.15x</span>
+                      </div>
+                      <input type="range" id="sliderStabMinZoom" min="1.05" max="1.40" step="0.02" value="1.15" class="range-slider">
+                    </div>
+                  </div>
+
+                  <!-- ACTION BUTTON -->
+                  <div class="action-footer mt-4">
+                    <button class="btn btn-primary btn-lg w-full" id="btnApplyStabilizer">
+                      🎯 BẮT ĐẦU THEO DÕI VÀ CHỐNG RUNG (APPLY STABILIZER)
+                    </button>
+                    <p class="text-hint text-center mt-2">Keyframe PositionX, PositionY và ScaleX sẽ tự động sinh và nạp vào clip trong CapCut.</p>
+                  </div>
+
+                  <!-- STABILIZER DIAGNOSTICS & RESULTS -->
+                  <div id="stabResultsBox" class="mt-4 p-3 bg-card-alt rounded border border-gray hidden">
+                    <h5 class="text-xs font-bold text-cyan mb-2">📊 Kết Quả Phân Tích & Chống Rung:</h5>
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div class="p-2 bg-dark rounded">
+                        <span class="text-muted block">Số Frame Tracked</span>
+                        <strong class="text-light" id="resStabFrames">0</strong>
+                      </div>
+                      <div class="p-2 bg-dark rounded">
+                        <span class="text-muted block">Độ Zoom Cần Thiết</span>
+                        <strong class="text-cyan" id="resStabZoom">1.15x</strong>
+                      </div>
+                      <div class="p-2 bg-dark rounded">
+                        <span class="text-muted block">Lệch Bù Rung Tối Đa</span>
+                        <strong class="text-warning" id="resStabOffset">ΔX: 0 | ΔY: 0</strong>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

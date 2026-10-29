@@ -21,6 +21,7 @@ from core.audio_analyzer import AudioAnalyzer
 from core.frame_ai_inspector import FrameAIInspector
 from core.filmstrip_generator import FilmstripGenerator
 from core.speed_ramp_engine import SpeedRampEngine
+from core.stabilizer_engine import StabilizerEngine
 
 adapter = CapCutAdapter()
 
@@ -214,6 +215,11 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/reset_speed":
             self._handle_reset_speed(payload)
+            return
+
+        # Lock-Point Stabilizer
+        if path == "/api/apply_stabilizer":
+            self._handle_apply_stabilizer(payload)
             return
 
         # Restore backup
@@ -903,6 +909,116 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 "status": "success",
                 "message": f"Đã khôi phục tốc độ chuẩn (1.0x) cho {modified_count} clip."
             })
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    def _handle_apply_stabilizer(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+        anchor_mode = payload.get("anchor_mode", "center")  # "center", "face", "chest", "custom"
+        anchor_x = float(payload.get("anchor_x_ratio", 0.5))
+        anchor_y = float(payload.get("anchor_y_ratio", 0.5))
+        stabilize_mode = payload.get("stabilize_mode", "dead_lock")  # "dead_lock" or "smooth"
+        smooth_window = int(payload.get("smooth_window", 15))
+        min_zoom = float(payload.get("min_zoom", 1.15))
+        fps = int(payload.get("fps", 30))
+
+        if anchor_mode == "center":
+            anchor_x, anchor_y = 0.5, 0.5
+        elif anchor_mode == "face":
+            anchor_x, anchor_y = 0.5, 0.30
+        elif anchor_mode == "chest":
+            anchor_x, anchor_y = 0.5, 0.55
+        else:
+            anchor_x = max(0.05, min(0.95, anchor_x))
+            anchor_y = max(0.05, min(0.95, anchor_y))
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            tracks = data.get("tracks", [])
+            modified_count = 0
+            details = []
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+
+                track = tracks[t_idx]
+                segs = track.get("segments", [])
+                if s_idx >= len(segs):
+                    continue
+
+                seg = segs[s_idx]
+                mat_id = seg.get("material_id")
+
+                # Locate video media path
+                video_file = ""
+                for v_mat in data.get("materials", {}).get("videos", []):
+                    if v_mat.get("id") == mat_id:
+                        v_path = v_mat.get("path", "")
+                        if "##_draftpath_placeholder_" in v_path:
+                            parts = v_path.split("_##/")
+                            if len(parts) == 2:
+                                v_path = os.path.join(project_path, parts[1])
+                        if os.path.exists(v_path):
+                            video_file = v_path
+                            break
+
+                if not video_file or not os.path.exists(video_file):
+                    continue
+
+                source_range = seg.get("source_timerange", {})
+                start_s = source_range.get("start", 0) / 1_000_000.0
+                dur_s = source_range.get("duration", seg.get("target_timerange", {}).get("duration", 1_000_000)) / 1_000_000.0
+
+                stab_res = StabilizerEngine.track_and_stabilize(
+                    video_path=video_file,
+                    start_seconds=start_s,
+                    duration_seconds=dur_s,
+                    anchor_x_ratio=anchor_x,
+                    anchor_y_ratio=anchor_y,
+                    stabilize_mode=stabilize_mode,
+                    smooth_window=smooth_window,
+                    min_zoom=min_zoom,
+                    fps=fps
+                )
+
+                if stab_res.get("status") == "success":
+                    self._apply_groups_to_segment(seg, stab_res["keyframes"], replace_existing=True)
+                    modified_count += 1
+                    details.append({
+                        "track_index": t_idx,
+                        "segment_index": s_idx,
+                        "auto_zoom": stab_res.get("auto_zoom"),
+                        "total_frames": stab_res.get("total_frames_tracked"),
+                        "max_deviation_x": stab_res.get("max_deviation_x"),
+                        "max_deviation_y": stab_res.get("max_deviation_y")
+                    })
+                else:
+                    raise RuntimeError(f"Lỗi theo dõi và chống rung: {stab_res.get('message')}")
+
+            if modified_count > 0:
+                adapter.save_project_data(folder_name, data)
+                self._send_json({
+                    "status": "success",
+                    "message": f"Đã chống rung khóa mốc và tự động zoom an toàn cho {modified_count} clip.",
+                    "details": details
+                })
+            else:
+                self._send_json({
+                    "status": "error",
+                    "message": "Không tìm thấy file video hợp lệ của các clip được chọn để phân tích chống rung."
+                }, 400)
+
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 500)
 

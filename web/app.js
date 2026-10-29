@@ -7,6 +7,10 @@ let activePreset = "rhythmic_switch_entrance";
 let activeSpeedPreset = "hero";
 let currentBeats = [];
 let audioFile = "";
+let stabAnchorMode = "center";
+let stabAnchorXRatio = 0.5;
+let stabAnchorYRatio = 0.5;
+let stabMode = "dead_lock";
 
 // Preset definitions with default parameters
 const PRESET_CONFIGS = {
@@ -229,6 +233,10 @@ function setupEventListeners() {
       if (btn.dataset.tab === "tabSpeedRamp") {
         drawSpeedGraphPreview();
       }
+      // Point-lock Stabilizer Canvas preview
+      if (btn.dataset.tab === "tabStabilizer") {
+        drawStabilizerCanvas();
+      }
     });
   });
 
@@ -265,6 +273,116 @@ function setupEventListeners() {
   document.getElementById("chkSpeedBeatSync").addEventListener("change", drawSpeedGraphPreview);
   document.getElementById("btnApplySpeedRamp").addEventListener("click", handleApplySpeedRamp);
   document.getElementById("btnResetSpeed").addEventListener("click", handleResetSpeed);
+
+  // Stabilizer Anchor Preset Buttons
+  document.querySelectorAll(".anchor-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".anchor-btn").forEach(b => {
+        b.classList.remove("btn-primary", "active");
+        b.classList.add("btn-secondary");
+      });
+      btn.classList.remove("btn-secondary");
+      btn.classList.add("btn-primary", "active");
+
+      const mode = btn.dataset.anchor;
+      stabAnchorMode = mode;
+      if (mode === "center") {
+        stabAnchorXRatio = 0.5;
+        stabAnchorYRatio = 0.5;
+      } else if (mode === "face") {
+        stabAnchorXRatio = 0.5;
+        stabAnchorYRatio = 0.30;
+      } else if (mode === "chest") {
+        stabAnchorXRatio = 0.5;
+        stabAnchorYRatio = 0.55;
+      }
+      updateStabilizerAnchorDisplay();
+      drawStabilizerCanvas();
+    });
+  });
+
+  // Stabilizer Canvas Click & Drag Picker
+  const stabCanvas = document.getElementById("stabilizerCanvas");
+  if (stabCanvas) {
+    let isStabDragging = false;
+    const updateAnchorFromEvent = (e) => {
+      const rect = stabCanvas.getBoundingClientRect();
+      const scaleX = stabCanvas.width / rect.width;
+      const scaleY = stabCanvas.height / rect.height;
+      const clickX = (e.clientX - rect.left) * scaleX;
+      const clickY = (e.clientY - rect.top) * scaleY;
+
+      stabAnchorXRatio = Math.max(0.05, Math.min(0.95, clickX / stabCanvas.width));
+      stabAnchorYRatio = Math.max(0.05, Math.min(0.95, clickY / stabCanvas.height));
+      stabAnchorMode = "custom";
+
+      document.querySelectorAll(".anchor-btn").forEach(b => {
+        b.classList.remove("btn-primary", "active");
+        b.classList.add("btn-secondary");
+        if (b.dataset.anchor === "custom") {
+          b.classList.remove("btn-secondary");
+          b.classList.add("btn-primary", "active");
+        }
+      });
+
+      updateStabilizerAnchorDisplay();
+      drawStabilizerCanvas();
+    };
+
+    stabCanvas.addEventListener("mousedown", (e) => {
+      isStabDragging = true;
+      updateAnchorFromEvent(e);
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (isStabDragging) updateAnchorFromEvent(e);
+    });
+    window.addEventListener("mouseup", () => {
+      isStabDragging = false;
+    });
+  }
+
+  // Reset Anchor Button
+  document.getElementById("btnResetAnchor").addEventListener("click", () => {
+    stabAnchorMode = "center";
+    stabAnchorXRatio = 0.5;
+    stabAnchorYRatio = 0.5;
+    document.querySelectorAll(".anchor-btn").forEach(b => {
+      b.classList.remove("btn-primary", "active");
+      b.classList.add("btn-secondary");
+      if (b.dataset.anchor === "center") {
+        b.classList.remove("btn-secondary");
+        b.classList.add("btn-primary", "active");
+      }
+    });
+    updateStabilizerAnchorDisplay();
+    drawStabilizerCanvas();
+  });
+
+  // Stabilizer Mode Cards
+  document.querySelectorAll(".stab-mode-card").forEach(card => {
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".stab-mode-card").forEach(c => c.classList.remove("active"));
+      card.classList.add("active");
+      stabMode = card.dataset.stabMode;
+      const winGroup = document.getElementById("stabSmoothWindowGroup");
+      if (stabMode === "smooth") {
+        winGroup.classList.remove("hidden");
+      } else {
+        winGroup.classList.add("hidden");
+      }
+    });
+  });
+
+  // Stabilizer Sliders
+  document.getElementById("sliderStabSmoothWin").addEventListener("input", (e) => {
+    document.getElementById("stabSmoothWinVal").textContent = `${e.target.value} frames`;
+  });
+  document.getElementById("sliderStabMinZoom").addEventListener("input", (e) => {
+    document.getElementById("stabMinZoomVal").textContent = `${parseFloat(e.target.value).toFixed(2)}x`;
+  });
+
+  // Apply Stabilizer Button
+  document.getElementById("btnApplyStabilizer").addEventListener("click", handleApplyStabilizer);
 
   // Apply Preset Button
   document.getElementById("btnApplyPreset").addEventListener("click", handleApplyPreset);
@@ -1759,6 +1877,200 @@ async function handleGenerateFilmstrip() {
     }
   } catch (err) {
     showToast("Lỗi kết nối", "error");
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
+// ==========================================
+// POINT-LOCK STABILIZER FUNCTIONS
+// ==========================================
+
+function updateStabilizerAnchorDisplay() {
+  const modeDisplay = document.getElementById("stabAnchorDisplay");
+  const coordDisplay = document.getElementById("stabCoordDisplay");
+
+  const xPct = (stabAnchorXRatio * 100).toFixed(1);
+  const yPct = (stabAnchorYRatio * 100).toFixed(1);
+
+  if (stabAnchorMode === "center") {
+    modeDisplay.textContent = "Tâm Giữa (50%, 50%)";
+  } else if (stabAnchorMode === "face") {
+    modeDisplay.textContent = "Mặt / Đầu (50%, 30%)";
+  } else if (stabAnchorMode === "chest") {
+    modeDisplay.textContent = "Áo / Logo (50%, 55%)";
+  } else {
+    modeDisplay.textContent = `Tùy Chọn (${xPct}%, ${yPct}%)`;
+  }
+
+  coordDisplay.textContent = `X: ${xPct}% | Y: ${yPct}%`;
+}
+
+function drawStabilizerCanvas() {
+  const canvas = document.getElementById("stabilizerCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Background - Dark Studio Viewport
+  ctx.fillStyle = "#121218";
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle Rule-of-Thirds Grid
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+
+  // Vertical grid lines
+  ctx.beginPath();
+  ctx.moveTo(w / 3, 0); ctx.lineTo(w / 3, h);
+  ctx.moveTo((w * 2) / 3, 0); ctx.lineTo((w * 2) / 3, h);
+  // Horizontal grid lines
+  ctx.moveTo(0, h / 3); ctx.lineTo(w, h / 3);
+  ctx.moveTo(0, (h * 2) / 3); ctx.lineTo(w, (h * 2) / 3);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Center axes (subtle)
+  ctx.strokeStyle = "rgba(0, 242, 254, 0.15)";
+  ctx.beginPath();
+  ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+  ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  // Draw Stylized Subject Reference Silhouette (Head at 30%, Torso at 55%)
+  ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+  // Head
+  ctx.beginPath();
+  ctx.arc(w * 0.5, h * 0.30, 28, 0, Math.PI * 2);
+  ctx.fill();
+  // Shoulders & Torso
+  ctx.beginPath();
+  ctx.ellipse(w * 0.5, h * 0.58, 55, 80, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Reference Text for Key Landmarks
+  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.font = "10px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("👤 Khu vực Mặt / Đầu", w * 0.5, h * 0.30 - 34);
+  ctx.fillText("👕 Khu vực Ngực / Logo", w * 0.5, h * 0.55 + 5);
+
+  // Safe Margins / Auto-Zoom Border Guide
+  const minZoom = parseFloat(document.getElementById("sliderStabMinZoom")?.value || 1.15);
+  const marginX = ((minZoom - 1.0) / minZoom) * (w / 2);
+  const marginY = ((minZoom - 1.0) / minZoom) * (h / 2);
+
+  ctx.strokeStyle = "rgba(245, 166, 35, 0.35)";
+  ctx.setLineDash([3, 3]);
+  ctx.strokeRect(marginX, marginY, w - marginX * 2, h - marginY * 2);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(245, 166, 35, 0.7)";
+  ctx.font = "9px Inter, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`Viền an toàn (${minZoom.toFixed(2)}x Zoom)`, marginX + 4, marginY + 12);
+
+  // Active Anchor Target Coordinates
+  const targetX = stabAnchorXRatio * w;
+  const targetY = stabAnchorYRatio * h;
+
+  // Outer Glowing Target Circle
+  ctx.shadowColor = "#00f2fe";
+  ctx.shadowBlur = 10;
+  ctx.strokeStyle = "#00f2fe";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(targetX, targetY, 20, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner Target Dot
+  ctx.fillStyle = "#00f2fe";
+  ctx.beginPath();
+  ctx.arc(targetX, targetY, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Crosshair Lines
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(targetX - 28, targetY); ctx.lineTo(targetX - 8, targetY);
+  ctx.moveTo(targetX + 8, targetY); ctx.lineTo(targetX + 28, targetY);
+  ctx.moveTo(targetX, targetY - 28); ctx.lineTo(targetX, targetY - 8);
+  ctx.moveTo(targetX, targetY + 8); ctx.lineTo(targetX, targetY + 28);
+  ctx.stroke();
+
+  // Target Badge Label
+  ctx.fillStyle = "rgba(0, 242, 254, 0.9)";
+  ctx.font = "bold 9px Inter, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("MỐC KHÓA TRỤC 🎯", targetX, targetY + 34);
+}
+
+async function handleApplyStabilizer() {
+  if (!activeProject) {
+    showToast("Vui lòng chọn một dự án CapCut trước!", "warning");
+    return;
+  }
+  if (selectedSegments.size === 0) {
+    showToast("Vui lòng tích chọn clip bạn muốn chống rung!", "warning");
+    return;
+  }
+
+  const targets = Array.from(selectedSegments).map(key => {
+    const [t, s] = key.split("_").map(Number);
+    return { track_index: t, segment_index: s };
+  });
+
+  const smoothWin = parseInt(document.getElementById("sliderStabSmoothWin")?.value || 15);
+  const minZoom = parseFloat(document.getElementById("sliderStabMinZoom")?.value || 1.15);
+
+  const payload = {
+    folder_name: activeProject.folder_name,
+    targets: targets,
+    anchor_mode: stabAnchorMode,
+    anchor_x_ratio: stabAnchorXRatio,
+    anchor_y_ratio: stabAnchorYRatio,
+    stabilize_mode: stabMode,
+    smooth_window: smoothWin,
+    min_zoom: minZoom,
+    fps: activeProject.fps || 30
+  };
+
+  const btn = document.getElementById("btnApplyStabilizer");
+  const origText = btn.textContent;
+  btn.textContent = "⏳ Đang theo dõi khung hình & chống rung...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/apply_stabilizer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (data.status === "success") {
+      showToast(data.message || "Chống rung và khóa điểm mốc thành công!", "success");
+
+      // Display results summary box
+      const resBox = document.getElementById("stabResultsBox");
+      if (resBox && data.details && data.details.length > 0) {
+        const d = data.details[0];
+        document.getElementById("resStabFrames").textContent = `${d.total_frames} frames`;
+        document.getElementById("resStabZoom").textContent = `${d.auto_zoom}x`;
+        document.getElementById("resStabOffset").textContent = `ΔX: ${d.max_deviation_x} | ΔY: ${d.max_deviation_y}`;
+        resBox.classList.remove("hidden");
+      }
+
+      // Refresh project to reflect new keyframes
+      selectProject(activeProject.folder_name);
+    } else {
+      showToast(data.message || "Lỗi khi xử lý chống rung", "error");
+    }
+  } catch (err) {
+    showToast("Lỗi kết nối máy chủ", "error");
   } finally {
     btn.textContent = origText;
     btn.disabled = false;

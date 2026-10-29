@@ -43,14 +43,24 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Beat-Synced Speed Ramp**: Tự động giảm tốc độ cực chậm ở đúng từng nốt beat/bass và tua nhanh ở khoảng giữa 2 beat.
    - **Sao chép hàng loạt & Tự tính thời lượng**: Áp dụng đường cong tốc độ cho 20 clip cùng lúc, tự động tính toán lại thời lượng hiển thị (`target_timerange`) để timeline không bao giờ bị xô lệch hay hở khoảng trống.
 
-5. **📋 Sao Chép Hàng Loạt (Batch Keyframing)**:
+5. **🎯 Chống Rung Khóa Điểm Mốc (Point-Lock Stabilizer & Auto-Zoom Crop Protection)**:
+   - **Khóa Trục Cố Định (Dead-Lock 100%)**: Khóa cứng điểm mốc đứng im phăng phắc tại 1 vị trí cố định trên màn hình bất kể máy quay bị rung lắc hay người cầm máy di chuyển.
+   - **Khử Rung Mượt (Smooth Damping)**: Lọc sạch các rung giật cao tần của tay cầm, nhưng vẫn giữ lại chuyển động lia máy (pan/tilt) tự nhiên, mượt mà.
+   - **Điểm Mốc Nhận Diện Linh Hoạt**:
+     - 🎯 *Tâm Giữa (Center 50%, 50%)*: Khóa trung tâm khung hình.
+     - 👤 *Mặt / Đầu (Face 50%, 30%)*: Giữ khuôn mặt nhân vật luôn đứng yên 1 vị trí (rất thịnh hành trên TikTok/Reels).
+     - 👕 *Ngực Áo / Logo / Sản Phẩm (Chest 50%, 55%)*: Khóa áo hoặc sản phẩm cố định khi đổi trang phục, đổi đồ liên tục (outfit switch).
+     - 🖱️ *Tùy Chọn Tọa Độ*: Click trực tiếp lên màn hình mô phỏng để ghim điểm mốc vào bất kỳ vật thể nào.
+   - **Tự Động Phóng To Giữ Cảnh Trong Khung Hình (Auto-Zoom)**: Khi di chuyển bù rung, mép khung hình sẽ bị thụt vào. Thuật toán tự động đo độ lệch cực đại $\Delta X, \Delta Y$ để tính toán tỷ lệ phóng to (`KFTypeScaleX`) vừa vặn tuyệt đối, **triệt tiêu 100% hiện tượng hở viền đen**.
+
+6. **📋 Sao Chép Hàng Loạt (Batch Keyframing)**:
    - Copy keyframe từ 1 clip mẫu và áp dụng tức thì cho 10 - 50 clip khác trên timeline.
    - Hỗ trợ chế độ **Co giãn tỷ lệ (Stretch to fit)** để tự khớp độ dài từng clip nhận.
 
-6. **📈 Làm Mượt Easing (Curve Smoother)**:
+7. **📈 Làm Mượt Easing (Curve Smoother)**:
    - Chuyển đổi mọi keyframe gãy góc (`Line`) thành đường cong Bezier mềm mại `FreeCurveInOut`.
 
-7. **🛡️ An Toàn Tuyệt Đối (Auto Backup & Rollback)**:
+8. **🛡️ An Toàn Tuyệt Đối (Auto Backup & Rollback)**:
    - Tự động sao lưu bản dự phòng `.bak` trước mọi thao tác chỉnh sửa.
    - Tính năng 1-click Khôi phục (Restore) giúp đưa project về nguyên trạng bất kỳ lúc nào.
 
@@ -109,18 +119,22 @@ Trình duyệt sẽ tự động mở địa chỉ `http://localhost:8765`.
 ```
 capcut-keyframe-studio/
 ├── core/
-│   ├── capcut_adapter.py    # Quản lý đường dẫn, đọc/ghi và sao lưu draft CapCut
-│   ├── keyframe_engine.py   # Bộ sinh toán học keyframe, bezier curves, presets
-│   └── audio_analyzer.py    # Phân tích năng lượng âm thanh & bắt beat/bass
+│   ├── capcut_adapter.py      # Quản lý đường dẫn, đọc/ghi và sao lưu draft CapCut
+│   ├── keyframe_engine.py     # Bộ sinh toán học keyframe, bezier curves, presets
+│   ├── audio_analyzer.py      # Phân tích năng lượng âm thanh & bắt beat/bass
+│   ├── frame_ai_inspector.py  # Soi từng frame, vận tốc, gia tốc, auto-tune
+│   ├── filmstrip_generator.py # Xuất 1 ảnh PNG tổng hợp dạng lưới (Contact sheet)
+│   ├── speed_ramp_engine.py   # Uốn tốc độ Curve speed, Hero, Bullet, Beat-sync
+│   └── stabilizer_engine.py   # Chống rung khóa điểm mốc, auto-zoom crop viền
 ├── web/
-│   ├── index.html           # Giao diện Dark theme chuyên nghiệp
-│   ├── style.css            # Hệ thống màu sắc, layout, canvas preview
-│   └── app.js               # Logic tương tác, vẽ đồ thị & gọi API
-├── server.py                # REST API Server siêu nhẹ (Python standard library)
-├── run.py                   # Launcher tự động mở trình duyệt
-├── run_mac.sh               # Script 1-click cho Mac
-├── run_win.bat              # Script 1-click cho Windows
-└── README.md                # Tài liệu hướng dẫn
+│   ├── index.html             # Giao diện Dark theme chuyên nghiệp
+│   ├── style.css              # Hệ thống màu sắc, layout, canvas preview
+│   └── app.js                 # Logic tương tác, vẽ đồ thị & gọi API
+├── server.py                  # REST API Server siêu nhẹ (Python standard library)
+├── run.py                     # Launcher tự động mở trình duyệt
+├── run_mac.sh                 # Script 1-click cho Mac
+├── run_win.bat                # Script 1-click cho Windows
+└── README.md                  # Tài liệu hướng dẫn
 ```
 
 ---

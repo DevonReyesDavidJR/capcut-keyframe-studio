@@ -256,3 +256,4 @@ class SpeedRampEngine:
             clean_pts.append({"x": 1.0, "y": fast_speed})
 
         return cls.create_speed_material("Beat Ramp", clean_pts)
+

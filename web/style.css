@@ -1045,6 +1045,78 @@ body {
 .border-t { border-top: 1px solid var(--border-color); }
 .pt-4 { padding-top: 16px; }
 
+/* POINT-LOCK STABILIZER */
+.stabilizer-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+}
+
+.stabilizer-anchor-card, .stabilizer-controls-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 18px;
+}
+
+.anchor-canvas-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #0b0b0e;
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.stabilizer-canvas-box {
+  position: relative;
+  cursor: crosshair;
+}
+
+.canvas-hint-overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 0.68rem;
+  padding: 3px 8px;
+  border-radius: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stab-mode-card {
+  background-color: #181820;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.stab-mode-card:hover {
+  background-color: #22222c;
+}
+
+.stab-mode-card.active {
+  border-color: var(--primary);
+  background: rgba(0, 242, 254, 0.08);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.15);
+}
+
+.grid-cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.block {
+  display: block;
+}
+
 /* UTILITIES */
 .hidden { display: none !important; }
 .text-cyan { color: var(--primary) !important; }
