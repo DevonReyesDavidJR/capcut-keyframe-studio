@@ -362,6 +362,39 @@
                     </table>
                   </div>
                 </div>
+
+                <!-- FILMSTRIP SINGLE PNG SUMMARY -->
+                <div class="mt-6 pt-4 border-t border-gray">
+                  <div class="flex items-center justify-between mb-2">
+                    <div>
+                      <h5 class="text-sm font-bold">🎞️ Xuất 1 Ảnh Ghép Từng Frame (Filmstrip PNG Tổng)</h5>
+                      <p class="text-xs text-muted">Ghép tất cả frame của clip vào DUY NHẤT 1 file ảnh gọn nhẹ (~200KB) để soi toàn bộ nhịp chuyển động cùng lúc.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <select id="selectFilmstripGrid" class="select-box text-xs">
+                        <option value="5x2">Lưới 5x2 (10 frames)</option>
+                        <option value="6x3">Lưới 6x3 (18 frames)</option>
+                        <option value="8x2">Lưới 8x2 (16 frames)</option>
+                        <option value="6x1">Băng ngang 6x1 (6 frames)</option>
+                      </select>
+                      <button class="btn btn-sm btn-primary" id="btnGenerateFilmstrip">
+                        📸 Xuất 1 Ảnh PNG Tổng
+                      </button>
+                    </div>
+                  </div>
+
+                  <div id="filmstripContainer" class="filmstrip-box hidden mt-3">
+                    <div class="flex items-center justify-between mb-2 text-xs">
+                      <span class="text-cyan font-bold" id="filmstripMeta">10 frames • 210 KB</span>
+                      <a id="btnDownloadFilmstrip" href="#" download="capcut_filmstrip.png" class="btn btn-xs btn-outline">
+                        📥 Tải ảnh PNG về máy
+                      </a>
+                    </div>
+                    <div class="filmstrip-img-wrapper">
+                      <img id="filmstripImage" src="" alt="CapCut Filmstrip Contact Sheet" class="w-full rounded border border-gray">
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

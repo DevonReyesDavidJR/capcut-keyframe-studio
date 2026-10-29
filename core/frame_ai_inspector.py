@@ -320,3 +320,4 @@ class FrameAIInspector:
             })
 
         return optimized_groups
+

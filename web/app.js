@@ -298,6 +298,7 @@ function setupEventListeners() {
   document.getElementById("vpPlayPause").addEventListener("click", togglePlayViewport);
   document.getElementById("btnReanalyzeFrames").addEventListener("click", loadAIFrameInspection);
   document.getElementById("btnAIFixAll").addEventListener("click", handleAIFixAll);
+  document.getElementById("btnGenerateFilmstrip").addEventListener("click", handleGenerateFilmstrip);
 
   // Clear Keyframes
   document.getElementById("btnClearKeyframesPrompt").addEventListener("click", handleClearKeyframes);
@@ -1479,6 +1480,75 @@ async function handleAIFixAll() {
     }
   } catch (err) {
     showToast("Lỗi kết nối", "error");
+  }
+}
+
+async function handleGenerateFilmstrip() {
+  if (!activeProject) return;
+
+  let targetTrackIdx = 0;
+  let targetSegIdx = 0;
+  let found = false;
+
+  if (selectedSegments.size > 0) {
+    const firstKey = Array.from(selectedSegments)[0];
+    const [t, s] = firstKey.split("_").map(Number);
+    targetTrackIdx = t;
+    targetSegIdx = s;
+    found = true;
+  } else {
+    for (const t of activeProject.tracks) {
+      if (t.type === "video" && t.segments.length > 0) {
+        targetTrackIdx = t.index;
+        targetSegIdx = 0;
+        found = true;
+        break;
+      }
+    }
+  }
+
+  const gridVal = document.getElementById("selectFilmstripGrid").value; // "5x2", "6x3", etc.
+  const [cols, rows] = gridVal.split("x").map(Number);
+
+  const btn = document.getElementById("btnGenerateFilmstrip");
+  const origText = btn.textContent;
+  btn.textContent = "⏳ Đang trích xuất...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/generate_filmstrip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: activeProject.folder_name,
+        track_index: targetTrackIdx,
+        segment_index: targetSegIdx,
+        cols: cols,
+        rows: rows,
+        tile_width: 220
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      const container = document.getElementById("filmstripContainer");
+      const img = document.getElementById("filmstripImage");
+      const downloadBtn = document.getElementById("btnDownloadFilmstrip");
+      const meta = document.getElementById("filmstripMeta");
+
+      img.src = data.image_url;
+      downloadBtn.href = data.image_url;
+      meta.textContent = `${data.total_tiles} frames (${data.cols}x${data.rows}) • ${data.file_size_kb} KB • Độ dài: ${data.duration_seconds}s`;
+
+      container.classList.remove("hidden");
+      showToast(`Đã xuất 1 file PNG tổng hợp (${data.file_size_kb} KB)!`, "success");
+    } else {
+      showToast(data.message || "Lỗi khi tạo filmstrip", "error");
+    }
+  } catch (err) {
+    showToast("Lỗi kết nối", "error");
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
   }
 }
 

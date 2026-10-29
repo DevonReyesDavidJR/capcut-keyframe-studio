@@ -19,6 +19,7 @@ from core.capcut_adapter import CapCutAdapter
 from core.keyframe_engine import KeyframeEngine
 from core.audio_analyzer import AudioAnalyzer
 from core.frame_ai_inspector import FrameAIInspector
+from core.filmstrip_generator import FilmstripGenerator
 
 adapter = CapCutAdapter()
 
@@ -56,6 +57,20 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                         self.wfile.write(f.read())
                     return
             self.send_error(404, "Cover not found")
+            return
+
+        # Serve filmstrip contact sheet
+        if path == "/filmstrip":
+            fpath = params.get("path", ["/tmp/capcut_filmstrip.png"])[0]
+            if os.path.exists(fpath):
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                with open(fpath, "rb") as f:
+                    self.wfile.write(f.read())
+                return
+            self.send_error(404, "Filmstrip not found")
             return
 
         # API: List Projects
@@ -184,6 +199,11 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         # AI Auto-Fix Frames
         if path == "/api/ai_autofix_frames":
             self._handle_ai_autofix_frames(payload)
+            return
+
+        # Filmstrip Contact Sheet Generation
+        if path == "/api/generate_filmstrip":
+            self._handle_generate_filmstrip(payload)
             return
 
         # Restore backup
@@ -661,6 +681,73 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 500)
 
+    def _handle_generate_filmstrip(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        track_idx = payload.get("track_index", 0)
+        seg_idx = payload.get("segment_index", 0)
+        cols = int(payload.get("cols", 5))
+        rows = int(payload.get("rows", 2))
+        tile_width = int(payload.get("tile_width", 220))
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            tracks = data.get("tracks", [])
+            if track_idx >= len(tracks) or seg_idx >= len(tracks[track_idx].get("segments", [])):
+                raise ValueError("Clip index out of bounds")
+
+            seg = tracks[track_idx]["segments"][seg_idx]
+            mat_id = seg.get("material_id")
+
+            # Find matching video file path
+            video_file = ""
+            for v_mat in data.get("materials", {}).get("videos", []):
+                if v_mat.get("id") == mat_id:
+                    v_path = v_mat.get("path", "")
+                    if "##_draftpath_placeholder_" in v_path:
+                        parts = v_path.split("_##/")
+                        if len(parts) == 2:
+                            v_path = os.path.join(project_path, parts[1])
+                    if os.path.exists(v_path):
+                        video_file = v_path
+                        break
+
+            if not video_file or not os.path.exists(video_file):
+                raise FileNotFoundError("Không tìm thấy file video gốc của clip này trên ổ đĩa.")
+
+            # Calculate source start and duration in seconds
+            source_range = seg.get("source_timerange", {})
+            start_s = source_range.get("start", 0) / 1_000_000.0
+            dur_s = source_range.get("duration", seg.get("target_timerange", {}).get("duration", 1_000_000)) / 1_000_000.0
+
+            # Safe output PNG path in /tmp
+            clean_name = f"filmstrip_{os.path.basename(folder_name)}_{track_idx}_{seg_idx}.png"
+            output_png = os.path.join("/tmp", clean_name)
+
+            result = FilmstripGenerator.generate_filmstrip(
+                video_path=video_file,
+                start_seconds=start_s,
+                duration_seconds=dur_s,
+                cols=cols,
+                rows=rows,
+                tile_width=tile_width,
+                output_png_path=output_png
+            )
+
+            if result.get("status") == "success":
+                result["image_url"] = f"/filmstrip?path={urllib.parse.quote(output_png)}&t={int(time.time())}"
+
+            self._send_json(result)
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    def _send_json(self, data: Any, status_code: int = 200):
         response_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")

@@ -1000,6 +1000,32 @@ body {
 
 .text-warning { color: var(--accent-warning) !important; }
 
+/* FILMSTRIP CONTACT SHEET */
+.filmstrip-box {
+  background-color: #121218;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.filmstrip-img-wrapper {
+  max-height: 380px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+  background-color: #000;
+  display: flex;
+  justify-content: center;
+}
+
+.filmstrip-img-wrapper img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.border-t { border-top: 1px solid var(--border-color); }
+.pt-4 { padding-top: 16px; }
+
 /* UTILITIES */
 .hidden { display: none !important; }
 .text-cyan { color: var(--primary) !important; }
