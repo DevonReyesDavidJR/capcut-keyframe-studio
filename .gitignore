@@ -12,4 +12,9 @@ build/
 venv/
 .env
 .preview_cache/
+.pyinstaller_cache/
+*.spec
+*.dmg
+dmg_staging/
+AppIcon.iconset/
 
