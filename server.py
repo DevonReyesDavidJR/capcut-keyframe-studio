@@ -20,6 +20,7 @@ from core.keyframe_engine import KeyframeEngine
 from core.audio_analyzer import AudioAnalyzer
 from core.frame_ai_inspector import FrameAIInspector
 from core.filmstrip_generator import FilmstripGenerator
+from core.speed_ramp_engine import SpeedRampEngine
 
 adapter = CapCutAdapter()
 
@@ -204,6 +205,15 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         # Filmstrip Contact Sheet Generation
         if path == "/api/generate_filmstrip":
             self._handle_generate_filmstrip(payload)
+            return
+
+        # Speed Ramp Master
+        if path == "/api/apply_speed_ramp":
+            self._handle_apply_speed_ramp(payload)
+            return
+
+        if path == "/api/reset_speed":
+            self._handle_reset_speed(payload)
             return
 
         # Restore backup
@@ -744,6 +754,155 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 result["image_url"] = f"/filmstrip?path={urllib.parse.quote(output_png)}&t={int(time.time())}"
 
             self._send_json(result)
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    def _handle_apply_speed_ramp(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+        preset = payload.get("preset", "hero")
+        params = payload.get("params", {})
+        use_beat = payload.get("use_beat", False)
+        beats_us = payload.get("beats_us", [])
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if "materials" not in data:
+                data["materials"] = {}
+            if "speeds" not in data["materials"]:
+                data["materials"]["speeds"] = []
+
+            tracks = data.get("tracks", [])
+            modified_count = 0
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+                track = tracks[t_idx]
+                segs = track.get("segments", [])
+                if s_idx >= len(segs):
+                    continue
+
+                seg = segs[s_idx]
+                src_dur = seg.get("source_timerange", {}).get("duration", 3_000_000)
+                seg_start_us = seg.get("target_timerange", {}).get("start", 0)
+
+                # Generate speed material
+                if use_beat and beats_us:
+                    speed_mat = SpeedRampEngine.generate_beat_speed_ramp(
+                        segment_start_us=seg_start_us,
+                        segment_source_duration_us=src_dur,
+                        beat_timestamps_us=beats_us,
+                        fast_speed=float(params.get("fast_speed", 4.0)),
+                        slow_speed=float(params.get("slow_speed", 0.35))
+                    )
+                elif preset == "hero":
+                    speed_mat = SpeedRampEngine.preset_hero(
+                        fast_speed=float(params.get("fast_speed", 5.0)),
+                        slow_speed=float(params.get("slow_speed", 0.4))
+                    )
+                elif preset == "bullet":
+                    speed_mat = SpeedRampEngine.preset_bullet_time(
+                        ultra_slow=float(params.get("ultra_slow", 0.2))
+                    )
+                elif preset == "flash_in":
+                    speed_mat = SpeedRampEngine.preset_flash_in(
+                        rush_speed=float(params.get("rush_speed", 6.0))
+                    )
+                elif preset == "flash_out":
+                    speed_mat = SpeedRampEngine.preset_flash_out(
+                        rush_speed=float(params.get("rush_speed", 6.0))
+                    )
+                elif preset == "jump_cut":
+                    speed_mat = SpeedRampEngine.preset_jump_cut(
+                        fast_speed=float(params.get("fast_speed", 4.5))
+                    )
+                elif preset == "montage":
+                    speed_mat = SpeedRampEngine.preset_montage(
+                        peak_speed=float(params.get("peak_speed", 6.0)),
+                        dip_speed=float(params.get("dip_speed", 0.3))
+                    )
+                else:
+                    speed_mat = SpeedRampEngine.preset_hero()
+
+                # Add speed object to materials.speeds
+                data["materials"]["speeds"].append(speed_mat)
+
+                # Update segment references and timing
+                seg["speed"] = speed_mat["speed"]
+                if "extra_material_refs" not in seg:
+                    seg["extra_material_refs"] = []
+                # Remove existing speed refs from extra_material_refs
+                existing_speed_ids = {s.get("id") for s in data["materials"]["speeds"]}
+                seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in existing_speed_ids]
+                seg["extra_material_refs"].append(speed_mat["id"])
+
+                # Update target duration: target_duration = int(source_duration / effective_speed)
+                new_target_dur = int(src_dur / speed_mat["speed"])
+                if "target_timerange" in seg:
+                    seg["target_timerange"]["duration"] = new_target_dur
+
+                modified_count += 1
+
+            adapter.save_project_data(folder_name, data)
+            self._send_json({
+                "status": "success",
+                "message": f"Đã áp dụng Speed Ramp '{preset}' cho {modified_count} clip."
+            })
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    def _handle_reset_speed(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            tracks = data.get("tracks", [])
+            modified_count = 0
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+
+                seg = tracks[t_idx]["segments"][s_idx]
+                src_dur = seg.get("source_timerange", {}).get("duration", 3_000_000)
+
+                seg["speed"] = 1.0
+                if "target_timerange" in seg:
+                    seg["target_timerange"]["duration"] = src_dur
+
+                # Remove speed references
+                all_speeds = {s.get("id") for s in data.get("materials", {}).get("speeds", [])}
+                if "extra_material_refs" in seg:
+                    seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in all_speeds]
+
+                modified_count += 1
+
+            adapter.save_project_data(folder_name, data)
+            self._send_json({
+                "status": "success",
+                "message": f"Đã khôi phục tốc độ chuẩn (1.0x) cho {modified_count} clip."
+            })
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 500)
 

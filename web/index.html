@@ -134,6 +134,9 @@
             <button class="tab-btn" data-tab="tabBatch">
               📋 Sao Chép Hàng Loạt
             </button>
+            <button class="tab-btn text-purple" data-tab="tabSpeedRamp">
+              ⚡ Speed Ramping (Uốn Tốc Độ)
+            </button>
             <button class="tab-btn" data-tab="tabCurves">
               📈 Làm Mượt Easing
             </button>
@@ -524,6 +527,116 @@
                   <button class="btn btn-primary btn-lg w-full" id="btnApplyBatch">
                     📋 DÁN KEYFRAME VÀO CÁC CLIP ĐÃ CHỌN
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: SPEED RAMP MASTER -->
+          <div class="tab-pane" id="tabSpeedRamp">
+            <div class="speed-ramp-layout">
+              <!-- SPEED RAMP PRESETS GRID -->
+              <div class="speed-presets-column">
+                <h4 class="subheading mb-3">⚡ 1. Chọn Kiểu Uốn Tốc Độ (Speed Curve)</h4>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="preset-card active" data-speed-preset="hero">
+                    <div class="preset-icon">🚀</div>
+                    <div class="preset-info">
+                      <h4>Hero Curve</h4>
+                      <p>Nhanh 5x ➔ Slow-Mo 0.4x ➔ Nhanh 5x (Chuẩn MV)</p>
+                    </div>
+                  </div>
+
+                  <div class="preset-card" data-speed-preset="bullet">
+                    <div class="preset-icon">⏱️</div>
+                    <div class="preset-info">
+                      <h4>Bullet Time (Ma Trận)</h4>
+                      <p>Bình thường 1x ➔ Khựng chậm 0.2x ➔ Bình thường</p>
+                    </div>
+                  </div>
+
+                  <div class="preset-card" data-speed-preset="flash_in">
+                    <div class="preset-icon">⚡</div>
+                    <div class="preset-info">
+                      <h4>Flash In</h4>
+                      <p>Lao cực nhanh vào 6x ➔ Bình thường 1x</p>
+                    </div>
+                  </div>
+
+                  <div class="preset-card" data-speed-preset="flash_out">
+                    <div class="preset-icon">💨</div>
+                    <div class="preset-info">
+                      <h4>Flash Out</h4>
+                      <p>Bình thường 1x ➔ Lao vút thoát cảnh 6x</p>
+                    </div>
+                  </div>
+
+                  <div class="preset-card" data-speed-preset="jump_cut">
+                    <div class="preset-icon">✂️</div>
+                    <div class="preset-info">
+                      <h4>Jump Cut</h4>
+                      <p>Giật nhấp nhô tốc độ cao dồn dập</p>
+                    </div>
+                  </div>
+
+                  <div class="preset-card" data-speed-preset="montage">
+                    <div class="preset-icon">🌊</div>
+                    <div class="preset-info">
+                      <h4>Montage Rhythm</h4>
+                      <p>Lượn sóng mượt mà theo nhịp điệu</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- BEAT SYNCED SPEED RAMP TOGGLE -->
+                <div class="mt-4 p-3 bg-card-alt rounded border border-gray">
+                  <label class="radio-label">
+                    <input type="checkbox" id="chkSpeedBeatSync">
+                    <span><strong>🎵 Tự động bám theo Beat nhạc (Beat-Synced Speed Ramp)</strong></span>
+                  </label>
+                  <p class="text-xs text-muted mt-1 ml-6">Tự động chậm lại ở đúng nốt Bass/Kick drum, và tua nhanh ở khoảng giữa 2 beat!</p>
+                </div>
+              </div>
+
+              <!-- SPEED RAMP CONTROLS & CURVE VISUALIZER -->
+              <div class="speed-controls-column">
+                <div class="control-box">
+                  <h4 class="control-box-title">🎛️ 2. Tinh Chỉnh Đường Cong Tốc Độ</h4>
+
+                  <div class="slider-row mt-3">
+                    <div class="slider-header">
+                      <span>Tốc độ tua nhanh tối đa (Fast Speed):</span>
+                      <span id="fastSpeedVal" class="slider-value">5.0x</span>
+                    </div>
+                    <input type="range" id="sliderFastSpeed" min="2.0" max="10.0" step="0.5" value="5.0" class="range-slider">
+                  </div>
+
+                  <div class="slider-row mt-4">
+                    <div class="slider-header">
+                      <span>Tốc độ Slow-Motion (Slow Speed):</span>
+                      <span id="slowSpeedVal" class="slider-value">0.4x</span>
+                    </div>
+                    <input type="range" id="sliderSlowSpeed" min="0.1" max="0.8" step="0.05" value="0.4" class="range-slider">
+                  </div>
+
+                  <!-- SPEED GRAPH PREVIEW CANVAS -->
+                  <div class="visualizer-wrapper mt-4">
+                    <div class="visualizer-header">
+                      <span>Đồ thị tốc độ (Tua nhanh ➔ Chậm ➔ Nhanh):</span>
+                      <span id="speedModeBadge" class="badge-mini">Mode 1: Curve Speed</span>
+                    </div>
+                    <canvas id="speedGraphCanvas" width="450" height="130"></canvas>
+                  </div>
+
+                  <div class="action-footer mt-4">
+                    <button class="btn btn-purple btn-lg w-full" id="btnApplySpeedRamp">
+                      ⚡ ÁP DỤNG SPEED RAMP VÀO CÁC CLIP ĐÃ CHỌN
+                    </button>
+                    <button class="btn btn-secondary btn-sm w-full mt-2" id="btnResetSpeed">
+                      🔄 Khôi Phục Tốc Độ Chuẩn (1.0x)
+                    </button>
+                    <p class="text-hint text-center mt-2">Thời lượng clip trên timeline sẽ được tự động tính toán lại khớp tuyệt đối.</p>
+                  </div>
                 </div>
               </div>
             </div>

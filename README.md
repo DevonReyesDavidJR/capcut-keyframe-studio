@@ -35,12 +35,22 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
 3. **🎵 Auto Keyframe Theo Beat Nhạc (Beat & Bass Sync)**:
    - Tự động phân tích beat/bass từ chính Audio Track trong project hoặc theo nhịp BPM cố định.
    - Tự động sinh keyframe **Bass Bounce** (Nảy nhịp), **Bass Shake** (Rung nhịp), hoặc **Bass Flash** (Chớp mờ) chính xác từng mili-giây.
-3. **📋 Sao Chép Hàng Loạt (Batch Keyframing)**:
+
+4. **⚡ Speed Ramping Master (Uốn Tốc Độ & Đồng Bộ Nhịp Chuẩn Điện Ảnh)**:
+   - **Hero Curve**: Tua nhanh $5\text{x} \rightarrow$ Rớt Slow-Motion $0.4\text{x}$ đúng khoảnh khắc đắt giá $\rightarrow$ Tua nhanh $5\text{x}$ thoát cảnh (chuẩn MV/trailer).
+   - **Bullet Time (Ma Trận)**: Tốc độ chuẩn $1\text{x} \rightarrow$ Khựng siêu chậm $0.2\text{x}$ ở điểm nhấn $\rightarrow$ Bật lại bình thường.
+   - **Flash In / Flash Out**: Lao cực nhanh vào hoặc vút nhanh thoát cảnh.
+   - **Beat-Synced Speed Ramp**: Tự động giảm tốc độ cực chậm ở đúng từng nốt beat/bass và tua nhanh ở khoảng giữa 2 beat.
+   - **Sao chép hàng loạt & Tự tính thời lượng**: Áp dụng đường cong tốc độ cho 20 clip cùng lúc, tự động tính toán lại thời lượng hiển thị (`target_timerange`) để timeline không bao giờ bị xô lệch hay hở khoảng trống.
+
+5. **📋 Sao Chép Hàng Loạt (Batch Keyframing)**:
    - Copy keyframe từ 1 clip mẫu và áp dụng tức thì cho 10 - 50 clip khác trên timeline.
    - Hỗ trợ chế độ **Co giãn tỷ lệ (Stretch to fit)** để tự khớp độ dài từng clip nhận.
-4. **📈 Làm Mượt Easing (Curve Smoother)**:
+
+6. **📈 Làm Mượt Easing (Curve Smoother)**:
    - Chuyển đổi mọi keyframe gãy góc (`Line`) thành đường cong Bezier mềm mại `FreeCurveInOut`.
-5. **🛡️ An Toàn Tuyệt Đối (Auto Backup & Rollback)**:
+
+7. **🛡️ An Toàn Tuyệt Đối (Auto Backup & Rollback)**:
    - Tự động sao lưu bản dự phòng `.bak` trước mọi thao tác chỉnh sửa.
    - Tính năng 1-click Khôi phục (Restore) giúp đưa project về nguyên trạng bất kỳ lúc nào.
 

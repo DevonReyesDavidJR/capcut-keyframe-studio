@@ -4,6 +4,7 @@ let currentProjects = [];
 let activeProject = null;
 let selectedSegments = new Set(); // Stores composite keys: "trackIdx_segIdx"
 let activePreset = "rhythmic_switch_entrance";
+let activeSpeedPreset = "hero";
 let currentBeats = [];
 let audioFile = "";
 
@@ -224,19 +225,46 @@ function setupEventListeners() {
       if (btn.dataset.tab === "tabAIInspector" && activeProject) {
         loadAIFrameInspection();
       }
+      // Speed ramp graph preview
+      if (btn.dataset.tab === "tabSpeedRamp") {
+        drawSpeedGraphPreview();
+      }
     });
   });
 
-  // Preset Card Clicks
-  document.querySelectorAll(".preset-card").forEach(card => {
+  // Preset Card Clicks (Motion presets)
+  document.querySelectorAll(".preset-card[data-preset]").forEach(card => {
     card.addEventListener("click", () => {
-      document.querySelectorAll(".preset-card").forEach(c => c.classList.remove("active"));
+      document.querySelectorAll(".preset-card[data-preset]").forEach(c => c.classList.remove("active"));
       card.classList.add("active");
       activePreset = card.dataset.preset;
       renderPresetParams();
       drawCurvePreview();
     });
   });
+
+  // Speed Ramp Preset Clicks
+  document.querySelectorAll(".preset-card[data-speed-preset]").forEach(card => {
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".preset-card[data-speed-preset]").forEach(c => c.classList.remove("active"));
+      card.classList.add("active");
+      activeSpeedPreset = card.dataset.speedPreset;
+      drawSpeedGraphPreview();
+    });
+  });
+
+  // Speed Ramp Sliders & Controls
+  document.getElementById("sliderFastSpeed").addEventListener("input", (e) => {
+    document.getElementById("fastSpeedVal").textContent = `${e.target.value}x`;
+    drawSpeedGraphPreview();
+  });
+  document.getElementById("sliderSlowSpeed").addEventListener("input", (e) => {
+    document.getElementById("slowSpeedVal").textContent = `${e.target.value}x`;
+    drawSpeedGraphPreview();
+  });
+  document.getElementById("chkSpeedBeatSync").addEventListener("change", drawSpeedGraphPreview);
+  document.getElementById("btnApplySpeedRamp").addEventListener("click", handleApplySpeedRamp);
+  document.getElementById("btnResetSpeed").addEventListener("click", handleResetSpeed);
 
   // Apply Preset Button
   document.getElementById("btnApplyPreset").addEventListener("click", handleApplyPreset);
@@ -712,6 +740,191 @@ function drawCurvePreview() {
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(0, 242, 254, 0.4)";
   ctx.stroke();
+}
+
+function drawSpeedGraphPreview() {
+  const canvas = document.getElementById("speedGraphCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.fillStyle = "#0a0a0e";
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 45) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = 0; y < h; y += 26) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  // Draw 1.0x baseline
+  const base1xY = h - 25;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, base1xY);
+  ctx.lineTo(w, base1xY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.font = "10px sans-serif";
+  ctx.fillText("1.0x Chuẩn", 10, base1xY - 4);
+
+  const fastVal = parseFloat(document.getElementById("sliderFastSpeed").value) || 5.0;
+  const slowVal = parseFloat(document.getElementById("sliderSlowSpeed").value) || 0.4;
+  const isBeatSync = document.getElementById("chkSpeedBeatSync").checked;
+
+  const padX = 25;
+  const plotW = w - padX * 2;
+  const plotH = h - 45;
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#9d4edd";
+  ctx.beginPath();
+
+  function speedToY(spd) {
+    // Logarithmic scale so slow-mo (0.2x) and fast (8x) are both visible
+    const norm = (Math.log(Math.max(0.05, spd)) - Math.log(0.1)) / (Math.log(10.0) - Math.log(0.1));
+    return (h - 15) - norm * plotH;
+  }
+
+  if (isBeatSync) {
+    ctx.moveTo(padX, speedToY(fastVal));
+    const dips = 3;
+    for (let i = 0; i < dips; i++) {
+      const bx = padX + ((i + 0.5) / dips) * plotW;
+      const wDip = (plotW / dips) * 0.25;
+      ctx.lineTo(bx - wDip, speedToY(fastVal));
+      ctx.lineTo(bx, speedToY(slowVal));
+      ctx.lineTo(bx + wDip, speedToY(fastVal));
+    }
+    ctx.lineTo(w - padX, speedToY(fastVal));
+  } else if (activeSpeedPreset === "hero") {
+    ctx.moveTo(padX, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.3, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.45, speedToY(slowVal));
+    ctx.lineTo(padX + plotW * 0.65, speedToY(slowVal));
+    ctx.lineTo(padX + plotW * 0.78, speedToY(fastVal));
+    ctx.lineTo(w - padX, speedToY(fastVal));
+  } else if (activeSpeedPreset === "bullet") {
+    ctx.moveTo(padX, speedToY(1.0));
+    ctx.lineTo(padX + plotW * 0.35, speedToY(1.0));
+    ctx.lineTo(padX + plotW * 0.4, speedToY(slowVal * 0.5));
+    ctx.lineTo(padX + plotW * 0.6, speedToY(slowVal * 0.5));
+    ctx.lineTo(padX + plotW * 0.65, speedToY(1.0));
+    ctx.lineTo(w - padX, speedToY(1.0));
+  } else if (activeSpeedPreset === "flash_in") {
+    ctx.moveTo(padX, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.25, speedToY(fastVal));
+    ctx.bezierCurveTo(padX + plotW * 0.45, speedToY(fastVal), padX + plotW * 0.45, speedToY(1.0), padX + plotW * 0.6, speedToY(1.0));
+    ctx.lineTo(w - padX, speedToY(1.0));
+  } else if (activeSpeedPreset === "flash_out") {
+    ctx.moveTo(padX, speedToY(1.0));
+    ctx.lineTo(padX + plotW * 0.5, speedToY(1.0));
+    ctx.bezierCurveTo(padX + plotW * 0.65, speedToY(1.0), padX + plotW * 0.65, speedToY(fastVal), padX + plotW * 0.8, speedToY(fastVal));
+    ctx.lineTo(w - padX, speedToY(fastVal));
+  } else if (activeSpeedPreset === "montage") {
+    ctx.moveTo(padX, speedToY(2.0));
+    ctx.lineTo(padX + plotW * 0.5, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.8, speedToY(slowVal));
+    ctx.lineTo(w - padX, speedToY(1.0));
+  } else {
+    // Jump cut
+    ctx.moveTo(padX, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.25, speedToY(1.0));
+    ctx.lineTo(padX + plotW * 0.5, speedToY(fastVal));
+    ctx.lineTo(padX + plotW * 0.75, speedToY(1.0));
+    ctx.lineTo(w - padX, speedToY(fastVal));
+  }
+
+  ctx.stroke();
+
+  // Glow line
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(157, 78, 221, 0.4)";
+  ctx.stroke();
+}
+
+async function handleApplySpeedRamp() {
+  if (!activeProject) return;
+  if (selectedSegments.size === 0) {
+    showToast("Vui lòng tích chọn clip bạn muốn uốn tốc độ!", "warning");
+    return;
+  }
+
+  const targets = Array.from(selectedSegments).map(key => {
+    const [t, s] = key.split("_").map(Number);
+    return { track_index: t, segment_index: s };
+  });
+
+  const isBeat = document.getElementById("chkSpeedBeatSync").checked;
+  const fastSpeed = parseFloat(document.getElementById("sliderFastSpeed").value) || 5.0;
+  const slowSpeed = parseFloat(document.getElementById("sliderSlowSpeed").value) || 0.4;
+
+  const payload = {
+    folder_name: activeProject.folder_name,
+    targets: targets,
+    preset: activeSpeedPreset,
+    params: { fast_speed: fastSpeed, slow_speed: slowSpeed },
+    use_beat: isBeat,
+    beats_us: currentBeats
+  };
+
+  try {
+    const res = await fetch("/api/apply_speed_ramp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      showToast(data.message || "Áp dụng Speed Ramp thành công!", "success");
+      selectProject(activeProject.folder_name);
+    } else {
+      showToast(data.message || "Lỗi", "error");
+    }
+  } catch (err) {
+    showToast("Lỗi kết nối", "error");
+  }
+}
+
+async function handleResetSpeed() {
+  if (!activeProject) return;
+  if (selectedSegments.size === 0) {
+    showToast("Vui lòng tích chọn clip cần khôi phục tốc độ!", "warning");
+    return;
+  }
+
+  const targets = Array.from(selectedSegments).map(key => {
+    const [t, s] = key.split("_").map(Number);
+    return { track_index: t, segment_index: s };
+  });
+
+  try {
+    const res = await fetch("/api/reset_speed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: activeProject.folder_name,
+        targets: targets
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      showToast(data.message || "Đã khôi phục tốc độ chuẩn!", "success");
+      selectProject(activeProject.folder_name);
+    } else {
+      showToast(data.message || "Lỗi", "error");
+    }
+  } catch (err) {
+    showToast("Lỗi kết nối", "error");
+  }
 }
 
 // ==========================================

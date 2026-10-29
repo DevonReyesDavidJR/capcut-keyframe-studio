@@ -96,3 +96,4 @@ class FilmstripGenerator:
             return {"status": "error", "message": f"Lỗi FFmpeg: {err_msg[:200]}"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
