@@ -18,6 +18,7 @@ sys.path.insert(0, str(BASE_DIR))
 from core.capcut_adapter import CapCutAdapter
 from core.keyframe_engine import KeyframeEngine
 from core.audio_analyzer import AudioAnalyzer
+from core.frame_ai_inspector import FrameAIInspector
 
 adapter = CapCutAdapter()
 
@@ -173,6 +174,16 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         # Clear keyframes
         if path == "/api/clear_keyframes":
             self._handle_clear_keyframes(payload)
+            return
+
+        # AI Frame Inspection
+        if path == "/api/ai_inspect_frames":
+            self._handle_ai_inspect_frames(payload)
+            return
+
+        # AI Auto-Fix Frames
+        if path == "/api/ai_autofix_frames":
+            self._handle_ai_autofix_frames(payload)
             return
 
         # Restore backup
@@ -564,7 +575,92 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         else:
             seg["common_keyframes"] = existing_groups + new_groups
 
-    def _send_json(self, data: Any, status_code: int = 200):
+    def _handle_ai_inspect_frames(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        track_idx = payload.get("track_index", 0)
+        seg_idx = payload.get("segment_index", 0)
+        fps = int(payload.get("fps", 30))
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            tracks = data.get("tracks", [])
+            if track_idx >= len(tracks) or seg_idx >= len(tracks[track_idx].get("segments", [])):
+                raise ValueError("Clip index out of bounds")
+
+            seg = tracks[track_idx]["segments"][seg_idx]
+
+            # Try to grab audio beats if any audio track exists
+            beats = []
+            for t in tracks:
+                if t.get("type") == "audio":
+                    for a_seg in t.get("segments", []):
+                        m_id = a_seg.get("material_id")
+                        for a_mat in data.get("materials", {}).get("audios", []):
+                            if a_mat.get("id") == m_id:
+                                a_path = a_mat.get("path", "")
+                                if "##_draftpath_placeholder_" in a_path:
+                                    parts = a_path.split("_##/")
+                                    if len(parts) == 2:
+                                        a_path = os.path.join(project_path, parts[1])
+                                if os.path.exists(a_path):
+                                    beats = AudioAnalyzer.detect_beats_from_file(a_path, max_duration_sec=60)
+                                    break
+                    if beats:
+                        break
+
+            report = FrameAIInspector.inspect_segment_frames(
+                segment=seg,
+                fps=fps,
+                beat_timestamps_us=beats
+            )
+
+            self._send_json(report)
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    def _handle_ai_autofix_frames(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+        fps = int(payload.get("fps", 30))
+
+        try:
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            tracks = data.get("tracks", [])
+            modified_count = 0
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+
+                seg = tracks[t_idx]["segments"][s_idx]
+                optimized = FrameAIInspector.autofix_segment_motion(seg, fps=fps)
+                seg["common_keyframes"] = optimized
+                modified_count += 1
+
+            adapter.save_project_data(folder_name, data)
+            self._send_json({
+                "status": "success",
+                "message": f"AI đã tự động tinh chỉnh và làm mượt {modified_count} clip."
+            })
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
         response_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")

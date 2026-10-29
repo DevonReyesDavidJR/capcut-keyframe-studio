@@ -220,6 +220,10 @@ function setupEventListeners() {
       if (btn.dataset.tab === "tabBeatSync" && activeProject) {
         loadAudioBeats();
       }
+      // Auto-load AI Frame Inspection when switching to AI Inspector tab
+      if (btn.dataset.tab === "tabAIInspector" && activeProject) {
+        loadAIFrameInspection();
+      }
     });
   });
 
@@ -280,6 +284,20 @@ function setupEventListeners() {
   });
   document.getElementById("btnSmoothCurves").addEventListener("click", handleSmoothCurves);
   document.getElementById("btnShiftKeyframes").addEventListener("click", handleShiftKeyframes);
+
+  // AI Frame Inspector controls
+  document.getElementById("vpScrubber").addEventListener("input", (e) => {
+    seekToFrame(parseInt(e.target.value));
+  });
+  document.getElementById("vpPrevFrame").addEventListener("click", () => {
+    seekToFrame(currentFrameIndex - 1);
+  });
+  document.getElementById("vpNextFrame").addEventListener("click", () => {
+    seekToFrame(currentFrameIndex + 1);
+  });
+  document.getElementById("vpPlayPause").addEventListener("click", togglePlayViewport);
+  document.getElementById("btnReanalyzeFrames").addEventListener("click", loadAIFrameInspection);
+  document.getElementById("btnAIFixAll").addEventListener("click", handleAIFixAll);
 
   // Clear Keyframes
   document.getElementById("btnClearKeyframesPrompt").addEventListener("click", handleClearKeyframes);
@@ -1135,7 +1153,335 @@ async function handleSetCustomDir() {
   }
 }
 
-// Toast helper
+// ==========================================
+// AI FRAME INSPECTOR & VIEWPORT SIMULATOR
+// ==========================================
+
+let aiInspectionReport = null;
+let currentFrameIndex = 0;
+let isPlayingPreview = false;
+let previewInterval = null;
+
+async function loadAIFrameInspection() {
+  if (!activeProject) return;
+
+  // Determine which clip to inspect: first selected clip, or first clip with keyframes
+  let targetTrackIdx = 0;
+  let targetSegIdx = 0;
+  let found = false;
+
+  if (selectedSegments.size > 0) {
+    const firstKey = Array.from(selectedSegments)[0];
+    const [t, s] = firstKey.split("_").map(Number);
+    targetTrackIdx = t;
+    targetSegIdx = s;
+    found = true;
+  } else {
+    // Find first clip that has keyframes
+    for (const t of activeProject.tracks) {
+      if (t.type === "video") {
+        for (const s of t.segments) {
+          if (s.has_keyframes) {
+            targetTrackIdx = t.index;
+            targetSegIdx = s.index;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+  }
+
+  const track = activeProject.tracks.find(t => t.index === targetTrackIdx);
+  const seg = track ? track.segments[targetSegIdx] : null;
+
+  if (!seg) {
+    document.getElementById("viewClipName").textContent = "Chưa có clip";
+    return;
+  }
+
+  document.getElementById("viewClipName").textContent = `${seg.name} (${seg.duration_seconds}s)`;
+
+  try {
+    const res = await fetch("/api/ai_inspect_frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: activeProject.folder_name,
+        track_index: targetTrackIdx,
+        segment_index: targetSegIdx,
+        fps: activeProject.fps || 30
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      aiInspectionReport = data;
+      renderAIReport();
+      seekToFrame(0);
+    }
+  } catch (err) {
+    console.error("AI Inspect Error:", err);
+  }
+}
+
+function renderAIReport() {
+  if (!aiInspectionReport) return;
+
+  const scoreEl = document.getElementById("aiScoreDisplay");
+  const score = aiInspectionReport.ai_score;
+  scoreEl.textContent = `${score}/100`;
+  if (score >= 80) {
+    scoreEl.className = "stat-number text-cyan";
+  } else if (score >= 60) {
+    scoreEl.className = "stat-number text-warning";
+  } else {
+    scoreEl.className = "stat-number text-danger";
+  }
+
+  document.getElementById("aiIssuesCountDisplay").textContent = aiInspectionReport.issues_count;
+
+  const beatSync = aiInspectionReport.beat_sync || {};
+  document.getElementById("aiBeatSyncDisplay").textContent = `${beatSync.score || '--'}%`;
+  document.getElementById("aiBeatDesc").textContent = beatSync.description || "Chưa có dữ liệu beat.";
+
+  // Render Issues list
+  const issuesListEl = document.getElementById("aiIssuesList");
+  if (!aiInspectionReport.issues || aiInspectionReport.issues.length === 0) {
+    issuesListEl.innerHTML = `<p class="text-xs text-muted">✅ Không phát hiện chuyển động giật hoặc lỗi khung hình.</p>`;
+  } else {
+    issuesListEl.innerHTML = aiInspectionReport.issues.map(iss => {
+      const isHigh = iss.severity === "high";
+      return `
+        <div class="issue-item ${isHigh ? 'high' : ''}" onclick="seekToFrame(${iss.frame})">
+          <span>${isHigh ? '🚨' : '⚠️'}</span>
+          <div>
+            <strong>Frame ${iss.frame} (${iss.time_s}s):</strong> ${iss.description}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Configure Scrubber
+  const scrubber = document.getElementById("vpScrubber");
+  scrubber.min = 0;
+  scrubber.max = aiInspectionReport.total_frames;
+  scrubber.value = 0;
+
+  // Render Frame Data Table
+  const tbody = document.getElementById("frameTableBody");
+  tbody.innerHTML = (aiInspectionReport.frames || []).map(f => {
+    const isWarn = f.status === "warning";
+    const statusText = isWarn ? `<span class="status-badge-warn">Cảnh báo</span>` : `<span class="status-badge-ok">Mượt</span>`;
+    return `
+      <tr id="row_frame_${f.frame_index}" onclick="seekToFrame(${f.frame_index})">
+        <td><strong>#${f.frame_index}</strong></td>
+        <td>${f.time_offset_s}s</td>
+        <td>${f.position_x}</td>
+        <td>${f.position_y}</td>
+        <td>${f.scale}x</td>
+        <td>${f.velocity}</td>
+        <td>${statusText}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function seekToFrame(frameIdx) {
+  if (!aiInspectionReport || !aiInspectionReport.frames) return;
+
+  const maxF = aiInspectionReport.total_frames;
+  currentFrameIndex = Math.max(0, min(maxF, frameIdx));
+
+  document.getElementById("vpScrubber").value = currentFrameIndex;
+  document.getElementById("vpFrameDisplay").textContent = `Frame: ${currentFrameIndex} / ${maxF}`;
+
+  const frameData = aiInspectionReport.frames[currentFrameIndex];
+  if (frameData) {
+    document.getElementById("vpTimeDisplay").textContent = `⏱️ ${frameData.time_offset_s}s`;
+    document.getElementById("vpPosDisplay").textContent = `X: ${frameData.position_x} | Y: ${frameData.position_y}`;
+  }
+
+  // Highlight table row
+  document.querySelectorAll("#frameTableBody tr").forEach(r => r.classList.remove("active"));
+  const row = document.getElementById(`row_frame_${currentFrameIndex}`);
+  if (row) {
+    row.classList.add("active");
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  drawViewportFrame(currentFrameIndex);
+}
+
+function min(a, b) {
+  return a < b ? a : b;
+}
+
+function togglePlayViewport() {
+  const btn = document.getElementById("vpPlayPause");
+  if (isPlayingPreview) {
+    clearInterval(previewInterval);
+    isPlayingPreview = false;
+    btn.textContent = "▶ Phát Thử (30fps)";
+  } else {
+    isPlayingPreview = true;
+    btn.textContent = "⏸️ Tạm Dừng";
+    const fps = (activeProject && activeProject.fps) ? activeProject.fps : 30;
+    const intervalMs = 1000 / fps;
+
+    previewInterval = setInterval(() => {
+      if (!aiInspectionReport) return;
+      if (currentFrameIndex >= aiInspectionReport.total_frames) {
+        currentFrameIndex = 0;
+      } else {
+        currentFrameIndex++;
+      }
+      seekToFrame(currentFrameIndex);
+    }, intervalMs);
+  }
+}
+
+function drawViewportFrame(frameIdx) {
+  const canvas = document.getElementById("viewportCanvas");
+  if (!canvas || !aiInspectionReport || !aiInspectionReport.frames) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Clear 9:16 mobile canvas screen
+  ctx.fillStyle = "#09090d";
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw rule of thirds / safe margins (Shorts/Reels overlay)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(20, 40, w - 40, h - 80);
+  ctx.beginPath();
+  ctx.moveTo(w / 3, 0); ctx.lineTo(w / 3, h);
+  ctx.moveTo((w * 2) / 3, 0); ctx.lineTo((w * 2) / 3, h);
+  ctx.moveTo(0, h / 3); ctx.lineTo(w, h / 3);
+  ctx.moveTo(0, (h * 2) / 3); ctx.lineTo(w, (h * 2) / 3);
+  ctx.stroke();
+
+  // Draw motion path trail of previous frames
+  ctx.strokeStyle = "rgba(0, 242, 254, 0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= frameIdx; i++) {
+    const f = aiInspectionReport.frames[i];
+    const px = (w / 2) + (f.position_x * (w / 2));
+    const py = (h / 2) - (f.position_y * (h / 2));
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Draw current frame object
+  const curF = aiInspectionReport.frames[frameIdx];
+  if (!curF) return;
+
+  const objX = (w / 2) + (curF.position_x * (w / 2));
+  const objY = (h / 2) - (curF.position_y * (h / 2));
+  const scale = curF.scale || 1.0;
+  const rotRad = ((curF.rotation || 0.0) * Math.PI) / 180.0;
+  const alpha = curF.alpha !== undefined ? curF.alpha : 1.0;
+
+  ctx.save();
+  ctx.translate(objX, objY);
+  ctx.rotate(rotRad);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = alpha;
+
+  // Draw simulated product/video element (Card)
+  const cardW = 100;
+  const cardH = 130;
+
+  // Card shadow / glow
+  ctx.shadowColor = curF.status === "warning" ? "rgba(245, 158, 11, 0.6)" : "rgba(0, 242, 254, 0.4)";
+  ctx.shadowBlur = 12;
+
+  // Card background
+  const grad = ctx.createLinearGradient(-cardW / 2, -cardH / 2, cardW / 2, cardH / 2);
+  grad.addColorStop(0, "#1f2230");
+  grad.addColorStop(1, "#141620");
+  ctx.fillStyle = grad;
+  ctx.fillRect(-cardW / 2, -cardH / 2, cardW, cardH);
+
+  // Card border
+  ctx.strokeStyle = curF.status === "warning" ? "#f59e0b" : "#00f2fe";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-cardW / 2, -cardH / 2, cardW, cardH);
+
+  // Mock product icon & label
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 24px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("👕", 0, -10);
+
+  ctx.font = "10px sans-serif";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+  ctx.fillText("Switch Item", 0, 20);
+
+  ctx.font = "8px sans-serif";
+  ctx.fillStyle = "rgba(0, 242, 254, 0.9)";
+  ctx.fillText(`Scale: ${scale.toFixed(2)}x`, 0, 35);
+
+  ctx.restore();
+
+  // Draw crosshair at object center
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(objX - 6, objY); ctx.lineTo(objX + 6, objY);
+  ctx.moveTo(objX, objY - 6); ctx.lineTo(objX, objY + 6);
+  ctx.stroke();
+
+  // Warning badge on viewport if frame has issue
+  if (curF.status === "warning") {
+    ctx.fillStyle = "rgba(245, 158, 11, 0.9)";
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillText("⚠️ Cảnh báo gia tốc gắt!", w / 2, 30);
+  }
+}
+
+async function handleAIFixAll() {
+  if (!activeProject) return;
+
+  const targets = [];
+  if (selectedSegments.size > 0) {
+    selectedSegments.forEach(k => {
+      const [t, s] = k.split("_").map(Number);
+      targets.push({ track_index: t, segment_index: s });
+    });
+  } else {
+    showToast("Vui lòng tích chọn clip bạn muốn AI tối ưu!", "warning");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/ai_autofix_frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: activeProject.folder_name,
+        targets: targets,
+        fps: activeProject.fps || 30
+      })
+    });
+    const data = await res.json();
+    if (data.status === "success") {
+      showToast(data.message || "AI đã tự động tối ưu hóa khung hình!", "success");
+      loadAIFrameInspection();
+    } else {
+      showToast(data.message || "Lỗi khi tối ưu", "error");
+    }
+  } catch (err) {
+    showToast("Lỗi kết nối", "error");
+  }
+}
+
 function showToast(message, type = "success") {
   const toast = document.getElementById("toast");
   const msgEl = document.getElementById("toastMsg");

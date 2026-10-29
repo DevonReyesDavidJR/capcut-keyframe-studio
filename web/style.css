@@ -873,6 +873,133 @@ body {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* AI FRAME INSPECTOR */
+.ai-inspector-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 24px;
+}
+
+.ai-viewport-card, .ai-analysis-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 18px;
+}
+
+.viewport-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.screen-canvas-box {
+  width: 270px;
+  height: 480px;
+  margin: 0 auto;
+  background-color: #000;
+  border: 3px solid #333344;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+#viewportCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.viewport-controls {
+  background-color: #15151c;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.ai-issues-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #15151c;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background-color: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid var(--accent-warning);
+}
+
+.issue-item.high {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-left-color: var(--accent-danger);
+}
+
+.frame-table-wrapper {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: #121218;
+}
+
+.frame-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.frame-table th {
+  background-color: #1a1a24;
+  padding: 8px 10px;
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.frame-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.frame-table tr:hover {
+  background-color: rgba(0, 242, 254, 0.08);
+  cursor: pointer;
+}
+
+.frame-table tr.active {
+  background-color: rgba(0, 242, 254, 0.18);
+  font-weight: 600;
+}
+
+.status-badge-ok {
+  color: var(--accent-success);
+  font-weight: 600;
+}
+
+.status-badge-warn {
+  color: var(--accent-warning);
+  font-weight: 600;
+}
+
+.text-warning { color: var(--accent-warning) !important; }
+
 /* UTILITIES */
 .hidden { display: none !important; }
 .text-cyan { color: var(--primary) !important; }

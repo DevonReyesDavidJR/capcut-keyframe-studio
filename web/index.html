@@ -125,6 +125,9 @@
             <button class="tab-btn active" data-tab="tabPresets">
               ⚡ Presets Chuyển Động
             </button>
+            <button class="tab-btn" data-tab="tabAIInspector">
+              🤖 AI Soi & Check Khung Hình
+            </button>
             <button class="tab-btn" data-tab="tabBeatSync">
               🎵 Auto Beat / Nhịp Nhạc
             </button>
@@ -257,6 +260,106 @@
                       🚀 ÁP DỤNG VÀO <span id="selectedCountBtn">0</span> CLIP ĐÃ CHỌN
                     </button>
                     <p class="text-hint text-center mt-2">Dự án sẽ được tự động sao lưu an toàn trước khi lưu.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: AI FRAME INSPECTOR -->
+          <div class="tab-pane" id="tabAIInspector">
+            <div class="ai-inspector-layout">
+              <!-- LEFT: SIMULATED VIEWPORT & SCRUBBER -->
+              <div class="ai-viewport-card">
+                <div class="viewport-header">
+                  <h4 class="subheading">📱 Mô Phỏng Chuyển Động Từng Frame</h4>
+                  <span class="badge-mini" id="viewClipName">Chưa chọn clip</span>
+                </div>
+
+                <!-- SIMULATED 9:16 PHONE SCREEN CANVAS -->
+                <div class="screen-canvas-box">
+                  <canvas id="viewportCanvas" width="270" height="480"></canvas>
+                </div>
+
+                <!-- FRAME SCRUBBER CONTROLS -->
+                <div class="viewport-controls mt-4">
+                  <div class="flex items-center justify-between text-xs text-muted mb-2">
+                    <span id="vpTimeDisplay">⏱️ 0.000s</span>
+                    <span id="vpFrameDisplay" class="font-bold text-cyan">Frame: 0 / 0</span>
+                    <span id="vpPosDisplay">X: 0.00 | Y: 0.00</span>
+                  </div>
+
+                  <input type="range" id="vpScrubber" min="0" max="0" value="0" class="range-slider w-full">
+
+                  <div class="flex items-center justify-center gap-3 mt-3">
+                    <button class="btn btn-sm btn-secondary" id="vpPrevFrame" title="Lùi 1 Frame">◀ Lùi 1 Frame</button>
+                    <button class="btn btn-sm btn-primary" id="vpPlayPause">▶ Phát Thử (30fps)</button>
+                    <button class="btn btn-sm btn-secondary" id="vpNextFrame" title="Tới 1 Frame">Tới 1 Frame ▶</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- RIGHT: AI DIAGNOSTICS & FRAME ISSUES -->
+              <div class="ai-analysis-card">
+                <div class="flex justify-between items-center mb-4">
+                  <h4 class="subheading">🤖 Bảng Chẩn Đoán AI Frame</h4>
+                  <button class="btn btn-xs btn-outline" id="btnReanalyzeFrames">🔄 Quét Lại AI</button>
+                </div>
+
+                <!-- AI SCORE SUMMARY -->
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="stat-box">
+                    <span class="stat-number text-cyan" id="aiScoreDisplay">--</span>
+                    <span class="stat-label">Độ Mượt Mà AI</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-number text-warning" id="aiIssuesCountDisplay">0</span>
+                    <span class="stat-label">Cảnh Báo Khung Hình</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-number text-purple" id="aiBeatSyncDisplay">--</span>
+                    <span class="stat-label">Độ Khớp Beat Nhạc</span>
+                  </div>
+                </div>
+
+                <!-- AI BEAT SYNC DESCRIPTION -->
+                <div id="aiBeatDesc" class="mt-3 p-3 bg-card-alt rounded border border-gray text-xs">
+                  Chọn 1 clip có keyframe và chuyển sang tab này để AI phân tích từng khung hình.
+                </div>
+
+                <!-- AI ISSUES & WARNINGS LIST -->
+                <div class="mt-4">
+                  <div class="flex justify-between items-center mb-2">
+                    <h5 class="text-sm font-bold">⚠️ Cảnh Báo Frame Cần Lưu Ý:</h5>
+                    <button class="btn btn-xs btn-purple" id="btnAIFixAll">✨ AI Tự Động Nắn Mượt (Auto-Tune)</button>
+                  </div>
+                  <div class="ai-issues-list" id="aiIssuesList">
+                    <p class="text-muted text-xs">Chưa có cảnh báo nào.</p>
+                  </div>
+                </div>
+
+                <!-- FRAME BY FRAME MINI TABLE -->
+                <div class="mt-4">
+                  <h5 class="text-sm font-bold mb-2">📋 Bảng Dữ Liệu Từng Frame (Bấm để nhảy tới Frame):</h5>
+                  <div class="frame-table-wrapper">
+                    <table class="frame-table" id="frameDataTable">
+                      <thead>
+                        <tr>
+                          <th>Frame</th>
+                          <th>Thời Gian</th>
+                          <th>Tọa Độ X</th>
+                          <th>Tọa Độ Y</th>
+                          <th>Scale</th>
+                          <th>Vận Tốc</th>
+                          <th>Trạng Thái</th>
+                        </tr>
+                      </thead>
+                      <tbody id="frameTableBody">
+                        <tr>
+                          <td colspan="7" class="text-center text-muted text-xs p-3">Chưa có dữ liệu frame</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

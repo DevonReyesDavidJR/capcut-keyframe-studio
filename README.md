@@ -26,7 +26,12 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Whip Pan**: Gạt chuyển cảnh tốc độ cao sang trái/phải/lên/xuống.
    - **Breathing Pulse**: Nhịp thở/đập tuần hoàn êm ái.
    - **Fade Opacity**: Làm mờ dần / Hiện dần clip.
-2. **🎵 Auto Keyframe Theo Beat Nhạc (Beat & Bass Sync)**:
+2. **🤖 Trợ Lý AI Soi & Check Khung Hình (AI Frame Inspector & 30fps Viewport)**:
+   - **Màn hình mô phỏng chuyển động từng Frame (9:16 Preview Player)**: Xem thử chuyển động trực quan từng frame `[◀ Lùi 1 Frame]`, `[▶ Phát thử 30fps]`, `[Tới 1 Frame ▶]` hoặc kéo thanh scrubber mà không cần xuất video hay mở lại CapCut.
+   - **Chấm điểm độ mượt AI (Smoothness Score 0-100)**: Tự động tính toán đạo hàm vận tốc và gia tốc giữa các frame, phát hiện điểm gắt, giật hình hoặc đảo chiều đột ngột.
+   - **Soi lệch nhịp âm thanh (Beat Sync Check)**: Đối chiếu frame đỉnh chuyển động với frame âm thanh, cảnh báo nếu chuyển động chạm đích sớm hoặc muộn so với tiếng bass/kick.
+   - **✨ AI Auto-Tune (1-Click Fix)**: Tự động nắn mượt và loại bỏ các vi điểm giật cục bằng đường cong toán học chuẩn xác.
+3. **🎵 Auto Keyframe Theo Beat Nhạc (Beat & Bass Sync)**:
    - Tự động phân tích beat/bass từ chính Audio Track trong project hoặc theo nhịp BPM cố định.
    - Tự động sinh keyframe **Bass Bounce** (Nảy nhịp), **Bass Shake** (Rung nhịp), hoặc **Bass Flash** (Chớp mờ) chính xác từng mili-giây.
 3. **📋 Sao Chép Hàng Loạt (Batch Keyframing)**:
