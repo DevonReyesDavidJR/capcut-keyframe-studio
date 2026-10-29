@@ -1,0 +1,7 @@
+# CapCut Keyframe Studio Pro
+# 100% pure standard library compatible out of the box!
+# No mandatory pip packages required.
+
+# Optional performance & audio dependencies:
+# numpy>=1.22.0
+# scipy>=1.9.0

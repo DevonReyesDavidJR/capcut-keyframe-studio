@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CapCut Keyframe Studio Pro - Tool Hỗ Trợ Keyframe CapCut</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="bg-dark text-light antialiased">
+  <!-- TOP NAVBAR -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2" stroke="url(#cyan-grad)"/>
+          <polyline points="2 17 12 22 22 17" stroke="url(#cyan-grad)"/>
+          <polyline points="2 12 12 17 22 12" stroke="url(#cyan-grad)"/>
+          <defs>
+            <linearGradient id="cyan-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#00f2fe"/>
+              <stop offset="100%" stop-color="#4facfe"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <h1 class="nav-title">CapCut Keyframe Studio <span class="badge-pro">PRO</span></h1>
+        <p class="nav-subtitle">Bộ công cụ tự động hóa & tối ưu Keyframe CapCut (macOS & Windows)</p>
+      </div>
+    </div>
+
+    <div class="nav-status">
+      <div class="status-indicator online" id="statusIndicator">
+        <span class="dot"></span>
+        <span class="status-text" id="statusText">Đã kết nối CapCut</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnRefresh" title="Làm mới danh sách dự án">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+        Làm mới
+      </button>
+      <button class="btn btn-secondary btn-sm" id="btnSetDir" title="Đổi thư mục lưu trữ CapCut">
+        📁 Đổi thư mục
+      </button>
+      <button class="btn btn-outline btn-sm" id="btnHelp" title="Hướng dẫn sử dụng">
+        ❓ Hướng dẫn
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN APP CONTAINER -->
+  <div class="app-layout">
+    <!-- LEFT SIDEBAR: PROJECTS -->
+    <aside class="sidebar-projects">
+      <div class="sidebar-header">
+        <h2 class="sidebar-title">📁 Dự Án CapCut (<span id="projectCount">0</span>)</h2>
+        <div class="search-box">
+          <input type="text" id="projectSearch" placeholder="Tìm kiếm dự án..." class="input-text">
+        </div>
+      </div>
+      <div class="project-list" id="projectList">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Đang quét thư mục CapCut...</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT MAIN PANEL: TIMELINE & STUDIO -->
+    <main class="main-content">
+      <!-- EMPTY STATE IF NO PROJECT SELECTED -->
+      <div id="noProjectSelected" class="empty-view">
+        <div class="empty-icon">🎬</div>
+        <h2>Vui lòng chọn một Dự Án CapCut ở cột bên trái</h2>
+        <p>Tool sẽ tự động phân tích các track video, audio và cấu trúc keyframe của dự án.</p>
+      </div>
+
+      <!-- ACTIVE PROJECT WORKSPACE -->
+      <div id="projectWorkspace" class="workspace hidden">
+        <!-- PROJECT INFO HEADER -->
+        <div class="project-banner">
+          <div class="banner-details">
+            <h2 id="activeProjectTitle" class="banner-title">Tên Dự Án</h2>
+            <div class="banner-meta">
+              <span class="meta-tag" id="metaDuration">⏱️ 00:00</span>
+              <span class="meta-tag" id="metaFps">🎬 30 FPS</span>
+              <span class="meta-tag" id="metaTracks">🎞️ 0 Tracks</span>
+              <span class="meta-tag text-cyan" id="metaSelectedClips">Đã chọn: 0 clips</span>
+            </div>
+          </div>
+          <div class="banner-actions">
+            <button class="btn btn-sm btn-outline-warning" id="btnOpenBackups">
+              🛡️ Bản sao lưu (<span id="backupBadge">0</span>)
+            </button>
+            <button class="btn btn-sm btn-outline-danger" id="btnClearKeyframesPrompt">
+              🗑️ Xóa Keyframe
+            </button>
+          </div>
+        </div>
+
+        <!-- TIMELINE TRACKS INSPECTOR -->
+        <section class="section-card">
+          <div class="section-header">
+            <div class="flex items-center gap-2">
+              <h3 class="section-heading">🎞️ Danh Sách Tracks & Clips Trong Timeline</h3>
+              <span class="section-sub">(Tích chọn các clip bạn muốn áp dụng keyframe)</span>
+            </div>
+            <div class="track-quick-actions">
+              <button class="btn btn-xs btn-secondary" id="btnSelectAllClips">Chọn tất cả</button>
+              <button class="btn btn-xs btn-secondary" id="btnDeselectAllClips">Bỏ chọn</button>
+            </div>
+          </div>
+          <div class="tracks-container" id="tracksContainer">
+            <!-- Dynamic Tracks Rendered Here -->
+          </div>
+        </section>
+
+        <!-- KEYFRAME STUDIO TABS -->
+        <section class="section-card studio-card">
+          <div class="studio-tabs">
+            <button class="tab-btn active" data-tab="tabPresets">
+              ⚡ Presets Chuyển Động
+            </button>
+            <button class="tab-btn" data-tab="tabBeatSync">
+              🎵 Auto Beat / Nhịp Nhạc
+            </button>
+            <button class="tab-btn" data-tab="tabBatch">
+              📋 Sao Chép Hàng Loạt
+            </button>
+            <button class="tab-btn" data-tab="tabCurves">
+              📈 Làm Mượt Easing
+            </button>
+            <button class="tab-btn" data-tab="tabHistory">
+              🛡️ Lịch Sử Sao Lưu
+            </button>
+          </div>
+
+          <!-- TAB 1: PRESETS -->
+          <div class="tab-pane active" id="tabPresets">
+            <div class="preset-layout">
+              <!-- Preset Grid Selection -->
+              <div class="preset-grid">
+                <div class="preset-card active" data-preset="smooth_zoom_in">
+                  <div class="preset-icon">🔍</div>
+                  <div class="preset-info">
+                    <h4>Smooth Zoom In</h4>
+                    <p>Phóng to mượt mà với đường cong Bezier</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="smooth_zoom_out">
+                  <div class="preset-icon">🔎</div>
+                  <div class="preset-info">
+                    <h4>Smooth Zoom Out</h4>
+                    <p>Thu nhỏ mượt mà từ cận cảnh ra toàn cảnh</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="camera_shake">
+                  <div class="preset-icon">🎥</div>
+                  <div class="preset-info">
+                    <h4>Camera Shake</h4>
+                    <p>Rung giật máy quay điện ảnh / Hip-hop</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="slow_pan">
+                  <div class="preset-icon">🖼️</div>
+                  <div class="preset-info">
+                    <h4>Slow Pan (Ken Burns)</h4>
+                    <p>Trôi nhẹ khung hình cho b-roll/ảnh tĩnh</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="elastic_bounce">
+                  <div class="preset-icon">🏀</div>
+                  <div class="preset-info">
+                    <h4>Elastic Bounce</h4>
+                    <p>Nảy đàn hồi pop-up sinh động</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="whip_pan">
+                  <div class="preset-icon">🚀</div>
+                  <div class="preset-info">
+                    <h4>Whip Pan</h4>
+                    <p>Gạt chuyển cảnh siêu tốc độ</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="breathing_pulse">
+                  <div class="preset-icon">🫁</div>
+                  <div class="preset-info">
+                    <h4>Breathing Pulse</h4>
+                    <p>Co giãn nhẹ nhàng tuần hoàn theo chu kỳ</p>
+                  </div>
+                </div>
+
+                <div class="preset-card" data-preset="fade_opacity">
+                  <div class="preset-icon">🌫️</div>
+                  <div class="preset-info">
+                    <h4>Fade Opacity</h4>
+                    <p>Mờ dần / Hiện dần clip mượt mà</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preset Config Controls & Interactive Preview Canvas -->
+              <div class="preset-controls-panel">
+                <div class="control-box">
+                  <h4 class="control-box-title">⚙️ Tùy Chỉnh Tham Số: <span id="currentPresetName" class="text-cyan">Smooth Zoom In</span></h4>
+
+                  <!-- DYNAMIC PARAMETERS INJECTED VIA JS -->
+                  <div id="presetParamsContainer" class="params-container">
+                    <!-- Sliders dynamically change based on chosen preset -->
+                  </div>
+
+                  <!-- INTERACTIVE CURVE VISUALIZER -->
+                  <div class="visualizer-wrapper">
+                    <div class="visualizer-header">
+                      <span>Mô phỏng đường cong chuyển động:</span>
+                      <span id="curveTypeBadge" class="badge-mini">FreeCurveInOut (Bezier)</span>
+                    </div>
+                    <canvas id="curveCanvas" width="450" height="120"></canvas>
+                  </div>
+
+                  <div class="action-footer">
+                    <button class="btn btn-primary btn-lg w-full" id="btnApplyPreset">
+                      🚀 ÁP DỤNG VÀO <span id="selectedCountBtn">0</span> CLIP ĐÃ CHỌN
+                    </button>
+                    <p class="text-hint text-center mt-2">Dự án sẽ được tự động sao lưu an toàn trước khi lưu.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: BEAT SYNC -->
+          <div class="tab-pane" id="tabBeatSync">
+            <div class="beat-sync-layout">
+              <div class="beat-config-card">
+                <h4 class="subheading">🎵 1. Nguồn Nhịp Điệu (Audio / BPM)</h4>
+                <div class="radio-group mt-3">
+                  <label class="radio-label">
+                    <input type="radio" name="beatSource" value="track" checked>
+                    <span>Phân tích tự động từ Audio Track trong Project</span>
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="beatSource" value="bpm">
+                    <span>Cố định theo nhịp BPM thủ công</span>
+                  </label>
+                </div>
+
+                <div id="bpmControlGroup" class="form-group mt-3 hidden">
+                  <label class="input-label">Tốc độ BPM (Beats Per Minute):</label>
+                  <div class="flex items-center gap-2">
+                    <input type="number" id="inputBpm" value="128" min="40" max="240" class="input-text w-32">
+                    <span class="text-muted">Nhịp phổ biến: 120, 128 (EDM), 140 (Trap), 95 (Hip-hop)</span>
+                  </div>
+                </div>
+
+                <h4 class="subheading mt-6">⚡ 2. Kiểu Hiệu Ứng Theo Nhịp</h4>
+                <div class="grid grid-cols-3 gap-3 mt-3">
+                  <div class="effect-mode-card active" data-beat-mode="bounce">
+                    <div class="text-2xl mb-1">💥</div>
+                    <div class="font-bold">Bass Bounce</div>
+                    <div class="text-xs text-muted">Nảy phóng to tại điểm rơi của beat</div>
+                  </div>
+                  <div class="effect-mode-card" data-beat-mode="shake">
+                    <div class="text-2xl mb-1">⚡</div>
+                    <div class="font-bold">Bass Shake</div>
+                    <div class="text-xs text-muted">Rung giật lệch góc theo nhịp</div>
+                  </div>
+                  <div class="effect-mode-card" data-beat-mode="flash">
+                    <div class="text-2xl mb-1">✨</div>
+                    <div class="font-bold">Bass Flash</div>
+                    <div class="text-xs text-muted">Chớp mờ nhẹ theo tiếng bass</div>
+                  </div>
+                </div>
+
+                <h4 class="subheading mt-6">🎛️ 3. Tinh Chỉnh Cường Độ</h4>
+                <div class="slider-row mt-3">
+                  <div class="slider-header">
+                    <span>Độ nảy tối đa (Scale Peak):</span>
+                    <span id="beatScaleVal" class="slider-value">1.18x</span>
+                  </div>
+                  <input type="range" id="sliderBeatScale" min="1.05" max="1.45" step="0.01" value="1.18" class="range-slider">
+                </div>
+
+                <div class="slider-row mt-4">
+                  <div class="slider-header">
+                    <span>Thời gian nảy hồi phục (Bounce Duration):</span>
+                    <span id="beatDurVal" class="slider-value">140 ms</span>
+                  </div>
+                  <input type="range" id="sliderBeatDur" min="60" max="300" step="10" value="140" class="range-slider">
+                </div>
+
+                <div class="action-footer mt-6">
+                  <button class="btn btn-purple btn-lg w-full" id="btnApplyBeatSync">
+                    ⚡ TỰ ĐỘNG PHÂN TÍCH VÀ TẠO KEYFRAME THEO BEAT
+                  </button>
+                </div>
+              </div>
+
+              <div class="beat-preview-card">
+                <h4 class="subheading">📊 Đồ Thị Nhịp Điệu & Điểm Beat</h4>
+                <div class="beat-stats mt-3">
+                  <div class="stat-box">
+                    <span class="stat-number" id="beatCountDisplay">0</span>
+                    <span class="stat-label">Số Beat Tìm Thấy</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-number" id="audioSourceDisplay">-</span>
+                    <span class="stat-label">Nguồn Audio</span>
+                  </div>
+                </div>
+                <div class="waveform-box mt-4">
+                  <canvas id="beatWaveformCanvas" width="400" height="160"></canvas>
+                </div>
+                <p class="text-hint text-center mt-3">Các vạch vàng hiển thị các điểm sẽ tự động gắn keyframe nảy nhịp.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: BATCH REPLICATE -->
+          <div class="tab-pane" id="tabBatch">
+            <div class="batch-layout">
+              <div class="batch-source-card">
+                <h4 class="subheading">1. Chọn Clip Nguồn (Đã có keyframe mẫu)</h4>
+                <div class="form-group mt-3">
+                  <label class="input-label">Clip mẫu:</label>
+                  <select id="selectSourceClip" class="select-box w-full">
+                    <option value="">-- Chọn một clip mẫu có keyframe --</option>
+                  </select>
+                </div>
+                <div id="sourceKeyframeSummary" class="mt-4 p-3 bg-card-alt rounded border border-gray">
+                  <p class="text-muted text-sm">Chưa chọn clip nguồn</p>
+                </div>
+              </div>
+
+              <div class="batch-dest-card">
+                <h4 class="subheading">2. Chế Độ Sao Chép</h4>
+                <div class="radio-group mt-3">
+                  <label class="radio-label">
+                    <input type="radio" name="replicateMode" value="stretch" checked>
+                    <span><strong>Tự động co giãn (Stretch to fit)</strong> - Điều chỉnh thời gian keyframe vừa khít độ dài clip nhận (Khuyên dùng)</span>
+                  </label>
+                  <label class="radio-label mt-2">
+                    <input type="radio" name="replicateMode" value="fixed">
+                    <span><strong>Thời gian cố định (Fixed time)</strong> - Giữ nguyên thời gian tuyệt đối của keyframe</span>
+                  </label>
+                </div>
+
+                <div class="mt-6">
+                  <h4 class="subheading">3. Mục Tiêu Nhận</h4>
+                  <p class="text-sm text-cyan mt-1">Đang áp dụng cho <strong id="batchTargetCount">0</strong> clip đã tích chọn ở danh sách trên.</p>
+                </div>
+
+                <div class="action-footer mt-6">
+                  <button class="btn btn-primary btn-lg w-full" id="btnApplyBatch">
+                    📋 DÁN KEYFRAME VÀO CÁC CLIP ĐÃ CHỌN
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: CURVE SMOOTHER -->
+          <div class="tab-pane" id="tabCurves">
+            <div class="curve-tools-layout">
+              <div class="curve-action-card">
+                <h4 class="subheading">📈 Chuyển Đổi Keyframe Thẳng Thành Đường Cong Mượt (Bezier)</h4>
+                <p class="text-muted text-sm mt-1">Loại bỏ hiện tượng chuyển động giật cục, biến các điểm keyframe thông thường thành đường cong tự nhiên.</p>
+
+                <div class="slider-row mt-6">
+                  <div class="slider-header">
+                    <span>Độ mềm mại của đường cong (Smoothness Factor):</span>
+                    <span id="smoothFactorVal" class="slider-value">0.35</span>
+                  </div>
+                  <input type="range" id="sliderSmoothFactor" min="0.1" max="0.5" step="0.05" value="0.35" class="range-slider">
+                </div>
+
+                <button class="btn btn-primary mt-6 w-full" id="btnSmoothCurves">
+                  ✨ LÀM MƯỢT ĐƯỜNG CONG TẤT CẢ CLIP ĐÃ CHỌN
+                </button>
+              </div>
+
+              <div class="curve-action-card">
+                <h4 class="subheading">⏱️ Dịch Chuyển Thời Gian Keyframe (Shift Retimer)</h4>
+                <p class="text-muted text-sm mt-1">Đẩy toàn bộ keyframe của clip tới hoặc lui một khoảng thời gian nhất định.</p>
+
+                <div class="flex items-center gap-3 mt-4">
+                  <input type="number" id="inputShiftMs" value="100" class="input-text w-32" placeholder="ms">
+                  <span class="text-sm">mili-giây (Dương = dời về sau, Âm = dời về trước)</span>
+                </div>
+
+                <button class="btn btn-secondary mt-6 w-full" id="btnShiftKeyframes">
+                  ⏩ DỊCH CHUYỂN THỜI GIAN KEYFRAME
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: BACKUP & HISTORY -->
+          <div class="tab-pane" id="tabHistory">
+            <div class="backup-layout">
+              <div class="flex justify-between items-center mb-4">
+                <h4 class="subheading">🛡️ Lịch Sử Sao Lưu Dự Án Này</h4>
+                <span class="text-sm text-muted">Hệ thống luôn tự động tạo bản sao lưu trước mỗi lần ghi đè</span>
+              </div>
+              <div class="backup-list" id="backupList">
+                <p class="text-muted text-sm">Chưa có bản sao lưu nào.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL: CHANGE DIRECTORY -->
+  <div class="modal hidden" id="modalSetDir">
+    <div class="modal-card">
+      <h3 class="modal-title">📁 Đổi Thư Mục Dự Án CapCut</h3>
+      <p class="modal-desc">Nhập đường dẫn thư mục <code>com.lveditor.draft</code> trên máy tính của bạn:</p>
+      <input type="text" id="inputCustomDir" class="input-text w-full mt-3" placeholder="/Users/.../Movies/CapCut/User Data/Projects/com.lveditor.draft">
+      <div class="modal-actions mt-4">
+        <button class="btn btn-secondary" id="btnCloseModalDir">Hủy</button>
+        <button class="btn btn-primary" id="btnConfirmSetDir">Lưu Đường Dẫn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: HELP & GUIDE -->
+  <div class="modal hidden" id="modalHelp">
+    <div class="modal-card modal-lg">
+      <h3 class="modal-title">📖 Hướng Dẫn Sử Dụng CapCut Keyframe Studio</h3>
+      <div class="modal-body-scroll mt-3 text-sm leading-relaxed">
+        <h4 class="text-cyan font-bold">1. Nguyên tắc hoạt động</h4>
+        <p>Tool đọc và tối ưu trực tiếp file cấu hình dự án của CapCut Desktop (macOS & Windows). <strong>Bạn không cần cài thêm plugin vào CapCut</strong>.</p>
+
+        <h4 class="text-cyan font-bold mt-3">2. Quy trình khuyến nghị</h4>
+        <ol class="list-decimal pl-5 space-y-1">
+          <li>Đóng hoặc lưu dự án trong CapCut trước khi bấm áp dụng.</li>
+          <li>Chọn dự án trong danh sách bên trái.</li>
+          <li>Tích chọn clip cần tạo chuyển động ở phần danh sách Track.</li>
+          <li>Chọn Preset chuyển động hoặc Auto Beat rồi bấm <strong>Áp Dụng</strong>.</li>
+          <li>Mở CapCut lên và bấm Play: keyframe mượt mà đã xuất hiện ngay trên timeline!</li>
+        </ol>
+
+        <h4 class="text-cyan font-bold mt-3">3. An toàn tuyệt đối</h4>
+        <p>Mỗi lần bạn áp dụng keyframe, một bản sao lưu <code>.bak</code> sẽ tự động được tạo. Nếu không vừa ý, bạn chỉ cần vào tab <strong>Lịch Sử Sao Lưu</strong> và bấm <strong>Khôi Phục</strong> là dự án sẽ trở về nguyên trạng ban đầu.</p>
+      </div>
+      <div class="modal-actions mt-4">
+        <button class="btn btn-primary" id="btnCloseModalHelp">Đã hiểu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="toast hidden" id="toast">
+    <span class="toast-icon">✅</span>
+    <span class="toast-message" id="toastMsg">Thành công!</span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
