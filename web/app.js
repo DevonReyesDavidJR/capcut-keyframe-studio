@@ -682,6 +682,7 @@ async function selectProject(folderName) {
 }
 
 function renderProjectWorkspace() {
+  cachedLayerImages = {};
   document.getElementById("noProjectSelected").classList.add("hidden");
   const ws = document.getElementById("projectWorkspace");
   ws.classList.remove("hidden");
@@ -897,7 +898,20 @@ function updateMasterPreview() {
 
   const canvas = document.getElementById("masterPreviewCanvas");
   if (!canvas) return;
+  // Match the project canvas; never stretch a landscape project into a phone.
+  const projectW = Math.max(1, activeProject.canvas_width || 1080);
+  const projectH = Math.max(1, activeProject.canvas_height || 1920);
+  const previewScale = Math.min(1, 960 / Math.max(projectW, projectH));
+  const previewW = Math.max(1, Math.round(projectW * previewScale));
+  const previewH = Math.max(1, Math.round(projectH * previewScale));
+  if (canvas.width !== previewW || canvas.height !== previewH) {
+    canvas.width = previewW;
+    canvas.height = previewH;
+  }
+  canvas.style.aspectRatio = projectW + " / " + projectH;
   const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   const cw = canvas.width;
   const ch = canvas.height;
 
@@ -949,6 +963,7 @@ function updateMasterPreview() {
   }
 
   // Draw Visual Layers onto Canvas from bottom layer (Track 0) to top layer
+  activeSegments.sort((a, b) => a.track.index - b.track.index);
   activeSegments.forEach(({ track, seg }) => {
     if (track.type !== "video" && track.type !== "sticker") return;
 
@@ -967,15 +982,16 @@ function updateMasterPreview() {
 
     ctx.save();
     ctx.translate(screenX, screenY);
-    ctx.scale(transform.scaleX, transform.scaleX);
+    ctx.scale(transform.scaleX, transform.scaleY);
+    ctx.globalAlpha = transform.opacity;
     if (transform.rot) {
       ctx.rotate((transform.rot * Math.PI) / 180);
     }
 
     const srcStartSec = seg.source_start_seconds || 0;
-    const isMp4 = seg.file_path.toLowerCase().endsWith(".mp4") || seg.file_path.toLowerCase().endsWith(".mov");
+    const isMp4 = /\.(mp4|mov|m4v|webm)$/i.test(seg.file_path);
     const srcOffsetSec = isMp4 ? Math.max(0, (relSec * (seg.speed || 1.0)) + srcStartSec) : 0;
-    const imgUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${srcOffsetSec.toFixed(2)}&w=360&h=640`;
+    const imgUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${srcOffsetSec.toFixed(2)}&w=${cw}&h=${ch}`;
 
     let img = cachedLayerImages[imgUrl];
     if (!img) {
@@ -985,17 +1001,12 @@ function updateMasterPreview() {
         if (!isPlaying) updateMasterPreview();
       };
       img.onerror = () => {
-        if (srcOffsetSec > 0) {
-          const fbUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=0.00&w=360&h=640`;
-          let fbImg = cachedLayerImages[fbUrl];
-          if (!fbImg) {
-            fbImg = new Image();
-            fbImg.src = fbUrl;
-            fbImg.onload = () => { if (!isPlaying) updateMasterPreview(); };
-            cachedLayerImages[fbUrl] = fbImg;
-          }
-        }
+        // Keep failed requests cached so a missing file cannot trigger a request loop.
+        img.dataset.failed = "true";
+        if (!isPlaying) updateMasterPreview();
       };
+      const cacheKeys = Object.keys(cachedLayerImages);
+      if (cacheKeys.length >= 48) delete cachedLayerImages[cacheKeys[0]];
       cachedLayerImages[imgUrl] = img;
     }
 
@@ -1005,7 +1016,7 @@ function updateMasterPreview() {
       let drawW = cw;
       let drawH = ch;
 
-      if (Math.abs(imgAspect - canvasAspect) < 0.05) {
+      if (Math.abs(imgAspect - canvasAspect) < 0.0001) {
         drawW = cw;
         drawH = ch;
       } else if (imgAspect > canvasAspect) {
@@ -1023,7 +1034,7 @@ function updateMasterPreview() {
       ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
       ctx.font = "10px Inter, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`⏳ Đang nạp ${seg.name.substring(0, 20)}...`, 0, 0);
+      ctx.fillText(img.dataset.failed ? "Không đọc được media nguồn" : `Đang nạp ${(seg.name || "media").substring(0, 20)}…`, 0, 0);
     }
     ctx.restore();
   });
@@ -1052,13 +1063,16 @@ function updateMasterPreview() {
 }
 
 function getSegmentTransformAt(seg, relTimeSec) {
-  let posX = 0.0;
-  let posY = 0.0;
-  let scaleX = 1.0;
-  let rot = 0.0;
+  const clip = seg.clip || {};
+  let posX = clip.transform?.x ?? 0;
+  let posY = clip.transform?.y ?? 0;
+  let scaleX = clip.scale?.x ?? 1;
+  let scaleY = clip.scale?.y ?? 1;
+  let rot = clip.rotation ?? 0;
+  let opacity = clip.alpha ?? 1;
 
   if (!seg.raw_common_keyframes || !Array.isArray(seg.raw_common_keyframes)) {
-    return { posX, posY, scaleX, rot };
+    return { posX, posY, scaleX, scaleY, rot, opacity: Math.max(0, Math.min(1, opacity)) };
   }
 
   const relTimeUs = Math.round(relTimeSec * 1_000_000);
@@ -1092,10 +1106,12 @@ function getSegmentTransformAt(seg, relTimeSec) {
     if (ptype === "KFTypePositionX") posX = val;
     else if (ptype === "KFTypePositionY") posY = val;
     else if (ptype === "KFTypeScaleX") scaleX = val;
+    else if (ptype === "KFTypeScaleY") scaleY = val;
+    else if (ptype === "KFTypeAlpha") opacity = val;
     else if (ptype === "KFTypeRotation") rot = val;
   }
 
-  return { posX, posY, scaleX, rot };
+  return { posX, posY, scaleX, scaleY, rot, opacity: Math.max(0, Math.min(1, opacity)) };
 }
 
 function formatTimecode(seconds) {

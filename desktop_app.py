@@ -31,7 +31,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 
 # Base path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,7 +73,7 @@ THEME = {
     "keyframe_diamond": "#facc15"# Keyframe diamond
 }
 
-FONT_FAMILY = "Helvetica"
+FONT_FAMILY = "Segoe UI" if platform.system() == "Windows" else "DejaVu Sans"
 if platform.system() == "Darwin":
     FONT_FAMILY = "SF Pro Display"
 
@@ -127,7 +127,7 @@ class RoundedButton(tk.Canvas):
 
         if variant == "primary":
             self.bg_color = THEME["accent_cyan"]
-            self.hover_color = "#38ef7d"
+            self.hover_color = "#7de9df"
             self.text_color = "#000000"
         elif variant == "danger":
             self.bg_color = "#3d1417"
@@ -140,6 +140,12 @@ class RoundedButton(tk.Canvas):
 
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
+        self.configure(takefocus=True)
+        self.bind("<Configure>", self._on_resize)
+        self.bind("<FocusIn>", lambda e: self._draw())
+        self.bind("<FocusOut>", lambda e: self._draw())
+        self.bind("<Return>", self._on_click)
+        self.bind("<space>", self._on_key_activate)
         self.bind("<Button-1>", self._on_click)
 
         self._draw()
@@ -171,8 +177,8 @@ class RoundedButton(tk.Canvas):
         self.create_rectangle(x0, y0 + r, x1, y1 - r, fill=color, outline="")
 
         # Draw subtle border if not primary
-        if self.variant != "primary":
-            border_col = THEME["accent_cyan"] if self.is_hovered else THEME["border"]
+        if self.variant != "primary" or self.focus_get() == self:
+            border_col = THEME["accent_cyan"] if self.is_hovered or self.focus_get() == self else THEME["border"]
             self.create_arc(x0, y0, x0 + 2*r, y0 + 2*r, start=90, extent=90, fill="", outline=border_col, width=1)
             self.create_arc(x1 - 2*r, y0, x1, y0 + 2*r, start=0, extent=90, fill="", outline=border_col, width=1)
             self.create_arc(x0, y1 - 2*r, x0 + 2*r, y1, start=180, extent=90, fill="", outline=border_col, width=1)
@@ -185,6 +191,15 @@ class RoundedButton(tk.Canvas):
         # Center Text
         txt_col = "#000000" if (self.variant == "primary" or (self.is_hovered and self.variant == "danger")) else self.text_color
         self.create_text(self.w / 2, self.h / 2, text=self.btn_text, fill=txt_col, font=self.font)
+
+    def _on_resize(self, event):
+        self.w = event.width
+        self.h = event.height
+        self._draw()
+
+    def _on_key_activate(self, event):
+        self._on_click(event)
+        return "break"
 
     def _on_enter(self, e):
         self.is_hovered = True
@@ -354,7 +369,7 @@ class PILMediaCompositor:
             if file_path in self.image_cache:
                 return self.image_cache[file_path]
         try:
-            img = Image.open(file_path).convert("RGBA")
+            img = ImageOps.exif_transpose(Image.open(file_path)).convert("RGBA")
             with self.lock:
                 if len(self.image_cache) < 60:
                     self.image_cache[file_path] = img
@@ -480,7 +495,7 @@ class PILMediaCompositor:
             target_h = max(2, int(base_h * cur_sy))
 
             # Resize layer image
-            resized = src_img.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            resized = src_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
             # Apply sub-pixel rotation if needed
             if cur_rot != 0.0:
@@ -496,7 +511,7 @@ class PILMediaCompositor:
             pos_y = int((ch / 2.0) - cur_ty * (ch / 2.0) - (rh / 2.0))
 
             # Alpha Composite onto the strict (cw, ch) phone buffer!
-            comp.paste(resized, (pos_x, pos_y), resized)
+            comp.alpha_composite(resized, (pos_x, pos_y))
 
         return comp, layers_meta
 
@@ -559,7 +574,7 @@ class CapCutStudioDesktopApp:
             "TNotebook.Tab",
             background=THEME["bg_card"],
             foreground=THEME["text_muted"],
-            padding=[16, 9],
+            padding=[9, 10],
             font=(FONT_FAMILY, 10, "bold")
         )
         style.map(
@@ -584,7 +599,7 @@ class CapCutStudioDesktopApp:
             background=THEME["bg_card"],
             fieldbackground=THEME["bg_card"],
             foreground=THEME["text_main"],
-            rowheight=26,
+            rowheight=30,
             borderwidth=0
         )
         style.configure(
@@ -683,27 +698,27 @@ class CapCutStudioDesktopApp:
 
         # Tab 1: Keyframe Motion Rhythms
         tab_rhythm = ttk.Frame(self.notebook, padding=8)
-        self.notebook.add(tab_rhythm, text="⚡ Nhịp Chuyển Động")
+        self.notebook.add(tab_rhythm, text="Chuyển động")
         self._build_tab_rhythm(tab_rhythm)
 
         # Tab 2: Speed Ramping Master
         tab_speed = ttk.Frame(self.notebook, padding=8)
-        self.notebook.add(tab_speed, text="🏎️ Speed Ramp")
+        self.notebook.add(tab_speed, text="Tốc độ")
         self._build_tab_speed(tab_speed)
 
         # Tab 3: Stabilizer Point-Lock
         tab_stab = ttk.Frame(self.notebook, padding=8)
-        self.notebook.add(tab_stab, text="🎯 Chống Rung Khóa Mốc")
+        self.notebook.add(tab_stab, text="Chống rung")
         self._build_tab_stabilizer(tab_stab)
 
         # Tab 4: AI Rhythm & Filmstrip (Single PNG)
         tab_ai = ttk.Frame(self.notebook, padding=8)
-        self.notebook.add(tab_ai, text="🤖 AI Nhịp & Filmstrip")
+        self.notebook.add(tab_ai, text="Phân tích")
         self._build_tab_ai_inspector(tab_ai)
 
         # Tab 5: Backups & Rollback
         tab_backup = ttk.Frame(self.notebook, padding=8)
-        self.notebook.add(tab_backup, text="🛡️ Bản Sao Lưu")
+        self.notebook.add(tab_backup, text="Sao lưu")
         self._build_tab_backups(tab_backup)
 
     def _build_tab_rhythm(self, parent):
@@ -711,7 +726,8 @@ class CapCutStudioDesktopApp:
         scrollbar = ttk.Scrollbar(parent, orient="vertical", command=scroll_canvas.yview)
         inner = tk.Frame(scroll_canvas, bg=THEME["bg_panel"])
         inner.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
-        scroll_canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner_window = scroll_canvas.create_window((0, 0), window=inner, anchor="nw")
+        scroll_canvas.bind("<Configure>", lambda e: scroll_canvas.itemconfigure(inner_window, width=e.width))
         scroll_canvas.configure(yscrollcommand=scrollbar.set)
         scroll_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -988,7 +1004,7 @@ class CapCutStudioDesktopApp:
 
         tk.Label(
             top_ctrl,
-            text="📺 TRÌNH PHÁT ĐA LỚP (STUDIO COMPOSITE MONITOR)",
+            text="Xem trước dự án",
             bg=THEME["bg_panel"],
             fg=THEME["accent_cyan"],
             font=(FONT_FAMILY, 11, "bold")
@@ -1042,7 +1058,7 @@ class CapCutStudioDesktopApp:
 
         # Timecode badge
         self.lbl_timecode = tk.Label(
-            ctrl_bar,
+            self.right_panel,
             text="00:00.000 / 00:00.000 (Frame 0 / 0)",
             bg=THEME["bg_card"],
             fg=THEME["accent_cyan"],
@@ -1050,7 +1066,7 @@ class CapCutStudioDesktopApp:
             padx=10,
             pady=4
         )
-        self.lbl_timecode.pack(side="right", padx=4)
+        self.lbl_timecode.pack(side="top", anchor="e", padx=4, pady=(4, 0))
 
         # Custom Vector Scrubber
         self.scrubber = ModernScrubber(self.right_panel, height=22, on_seek=self._on_scrubber_seek)
