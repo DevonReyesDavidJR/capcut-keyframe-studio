@@ -721,7 +721,7 @@ class CapCutStudioDesktopApp:
         actions = tk.Frame(parent, bg=THEME["bg_panel"])
         actions.pack(side="bottom", fill="x", pady=(8, 0))
         self.selected_rhythm = tk.StringVar(value="pulse_1s")
-        RoundedButton(actions, text="Áp dụng chuyển động", height=40, variant="primary",
+        RoundedButton(actions, text="Áp dụng trên track đã chọn", height=40, variant="primary",
                       command=lambda: self._apply_rhythm_preset(self.selected_rhythm.get())).pack(fill="x", pady=(0, 6))
         tk.Label(actions, text="Tự động sao lưu trước khi ghi.", bg=THEME["bg_panel"],
                  fg=THEME["text_muted"], font=(FONT_FAMILY, 9)).pack(anchor="w")
@@ -965,10 +965,14 @@ class CapCutStudioDesktopApp:
         self.lbl_viewport_info = tk.Label(top, text="1080 × 1920", bg=THEME["bg_panel"],
                                           fg=THEME["text_muted"], font=(FONT_FAMILY, 9))
         self.lbl_viewport_info.pack(side="right")
+        self.layers_button = RoundedButton(top, text="Layers", width=70, height=26, command=self._toggle_layer_inspector)
+        self.layers_button.pack(side="right", padx=12)
         # Reserve the inspector and transport before the expanding preview.
         layer_box = StudioGroup(self.right_panel, text="LAYER  /  Nhấn cột Hiện để bật, tắt",
                                 bg=THEME["bg_panel"], padx=4, pady=4)
         layer_box.pack(side="bottom", fill="x")
+        self.layer_box = layer_box
+        self.layers_expanded = True
         self.layer_tree = ttk.Treeview(layer_box,
             columns=("visible", "track", "name", "scale", "position", "status"), show="headings", height=3)
         for name, title, width in [
@@ -984,6 +988,7 @@ class CapCutStudioDesktopApp:
         self.layer_tree.bind("<ButtonRelease-1>", self._on_layer_tree_click)
         transport = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=6)
         transport.pack(side="bottom", fill="x")
+        self.transport = transport
         ctrl = tk.Frame(transport, bg=THEME["bg_panel"])
         ctrl.pack(fill="x")
         for text, command in [("|◀", self._step_to_start), ("◀ 1F", self._step_prev_frame)]:
@@ -1005,6 +1010,16 @@ class CapCutStudioDesktopApp:
         self.preview_canvas = tk.Canvas(bezel, bg="#090b0e", highlightthickness=0)
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", lambda e: self._render_current_frame())
+        if self.root.winfo_screenheight() < 850:
+            self._toggle_layer_inspector()
+
+    def _toggle_layer_inspector(self):
+        self.layers_expanded = not self.layers_expanded
+        if self.layers_expanded:
+            self.layer_box.pack(side="bottom", fill="x", before=self.transport)
+        else:
+            self.layer_box.pack_forget()
+        self.layers_button.set_text("Ẩn layers" if self.layers_expanded else "Layers")
 
     # --------------------------------------------------------------------------
     # BOTTOM VISUAL TIMELINE BAR

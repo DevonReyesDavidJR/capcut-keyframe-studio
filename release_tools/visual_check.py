@@ -71,6 +71,12 @@ def capture():
         input=json.dumps(payload), text=True, capture_output=True, check=True,
     )
     print("VISUAL_BLOB_SHA=" + json.loads(result.stdout)["sha"], flush=True)
+    if not app.layers_expanded:
+        app._toggle_layer_inspector()
+    root.update()
+    app._render_current_frame()
+    root.update()
+    ImageGrab.grab().save(output / "Desktop-Layers.png")
     app.timeline_canvas.yview_moveto(1)
     assert app.timeline_canvas.yview()[0] > 0, "All 20 tracks must be reachable"
     app.layer_tree.yview_moveto(1)
