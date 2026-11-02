@@ -65,4 +65,18 @@ with tempfile.TemporaryDirectory() as tmp:
         result = json.loads(info.read_text())
         assert result["tracks"][0]["segments"][0]["common_keyframes"], preset
     assert list(draft.glob("*.bak-*"))
+    app._draw_speed_curve_preview = lambda preset: None
+    for preset in ("hero_ramp", "bullet_time", "flash_in_out", "beat_sync", "reset"):
+        fixture = copy.deepcopy(original)
+        fixture["tracks"][0]["segments"][0]["source_timerange"] = {"start": 100000, "duration": 2000000}
+        info.write_text(json.dumps(fixture))
+        app.current_project = adapter.load_project_details("sample")
+        app._apply_speed_ramp(preset)
+        result = json.loads(info.read_text())
+        segment = result["tracks"][0]["segments"][0]
+        assert segment["speed"] > 0
+        assert abs(segment["target_timerange"]["duration"] - 2000000 / segment["speed"]) <= 1
+        if preset != "reset":
+            assert segment["extra_material_refs"][-1] in {s["id"] for s in result["materials"]["speeds"]}
+
 print("Transform, alpha, uniform scale and six preset action checks passed.")

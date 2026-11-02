@@ -522,8 +522,8 @@ class CapCutStudioDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("🎬 CapCut Keyframe Studio Pro - Desktop Edition")
-        self.root.geometry("1440x940")
-        self.root.minsize(1120, 760)
+        self.root.geometry(f"{min(1440, self.root.winfo_screenwidth())}x{min(940, self.root.winfo_screenheight() - 80)}")
+        self.root.minsize(1000, 680)
         self.root.configure(bg=THEME["bg_app"])
 
         # Core Engines
@@ -563,12 +563,12 @@ class CapCutStudioDesktopApp:
         style = ttk.Style()
         style.theme_use("clam")
 
-        style.configure(".", background=THEME["bg_panel"], foreground=THEME["text_main"], font=(FONT_FAMILY, 10))
+        style.configure(".", background=THEME["bg_panel"], foreground=THEME["text_main"], font=(FONT_FAMILY, 10), bordercolor=THEME["border"], lightcolor=THEME["bg_panel"], darkcolor=THEME["bg_panel"])
         style.configure("TFrame", background=THEME["bg_panel"])
         style.configure("Card.TFrame", background=THEME["bg_card"])
 
         # Notebook tabs
-        style.configure("TNotebook", background=THEME["bg_app"], borderwidth=0)
+        style.configure("TNotebook", background=THEME["bg_panel"], borderwidth=0, bordercolor=THEME["bg_panel"], lightcolor=THEME["bg_panel"], darkcolor=THEME["bg_panel"])
         style.configure(
             "TNotebook.Tab",
             background=THEME["bg_card"],
@@ -621,7 +621,7 @@ class CapCutStudioDesktopApp:
                   foreground=[("!disabled", THEME["text_main"])])
         style.configure("TScrollbar", background=THEME["bg_card_hover"], troughcolor=THEME["bg_panel"],
                         borderwidth=0, arrowsize=12)
-        style.configure("TNotebook.Tab", borderwidth=0, padding=[10, 10])
+        style.configure("TNotebook.Tab", borderwidth=0, padding=[9, 9], bordercolor=THEME["bg_panel"], lightcolor=THEME["bg_panel"], darkcolor=THEME["bg_panel"])
         style.configure("Treeview.Heading", background=THEME["bg_panel"], foreground=THEME["text_sub"])
         self.root.option_add("*TCombobox*Listbox.background", THEME["bg_input"])
         self.root.option_add("*TCombobox*Listbox.foreground", THEME["text_main"])
@@ -672,11 +672,11 @@ class CapCutStudioDesktopApp:
 
         # Left Operations Panel
         self.left_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.left_panel, minsize=380, width=420)
+        self.split_pane.add(self.left_panel, minsize=340, width=390)
 
         # Right Studio Monitor Panel
         self.right_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.right_panel, minsize=620)
+        self.split_pane.add(self.right_panel, minsize=500)
 
         self._build_operations_tabs()
         self._build_studio_monitor()
@@ -718,26 +718,42 @@ class CapCutStudioDesktopApp:
                  font=(FONT_FAMILY, 15, "bold")).pack(anchor="w", pady=(8, 4))
         tk.Label(parent, text="Chọn hiệu ứng, kiểm tra phạm vi rồi áp dụng.",
                  bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 10)).pack(anchor="w", pady=(0, 18))
+        actions = tk.Frame(parent, bg=THEME["bg_panel"])
+        actions.pack(side="bottom", fill="x", pady=(8, 0))
         self.selected_rhythm = tk.StringVar(value="pulse_1s")
-        grid = tk.Frame(parent, bg=THEME["bg_panel"])
+        RoundedButton(actions, text="Áp dụng chuyển động", height=40, variant="primary",
+                      command=lambda: self._apply_rhythm_preset(self.selected_rhythm.get())).pack(fill="x", pady=(0, 6))
+        tk.Label(actions, text="Tự động sao lưu trước khi ghi.", bg=THEME["bg_panel"],
+                 fg=THEME["text_muted"], font=(FONT_FAMILY, 9)).pack(anchor="w")
+        RoundedButton(actions, text="Xóa keyframe trên track đã chọn", height=30, variant="danger",
+                      command=self._clear_keyframes_on_track).pack(fill="x", pady=(8, 0))
+        scroll = tk.Canvas(parent, bg=THEME["bg_panel"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=scroll.yview)
+        scrollbar.pack(side="right", fill="y")
+        scroll.pack(fill="both", expand=True)
+        inner = tk.Frame(scroll, bg=THEME["bg_panel"])
+        window = scroll.create_window((0, 0), window=inner, anchor="nw")
+        scroll.configure(yscrollcommand=scrollbar.set)
+        scroll.bind("<Configure>", lambda e: scroll.itemconfigure(window, width=e.width))
+        inner.bind("<Configure>", lambda e: scroll.configure(scrollregion=scroll.bbox("all")))
+        scroll.bind("<MouseWheel>", lambda e: scroll.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        grid = tk.Frame(inner, bg=THEME["bg_panel"])
         grid.pack(fill="x")
         for col in range(2):
             grid.columnconfigure(col, weight=1, uniform="presets")
+        self.rhythm_buttons = {}
         presets = [
             ("Vào / Ra", "switch_in_out"), ("Nhịp 1 giây", "pulse_1s"),
             ("Nhịp 2 giây", "pulse_2s"), ("Nảy đàn hồi", "bounce"),
             ("Punch zoom", "punch_zoom"), ("Rung nhẹ", "shake"),
         ]
         for idx, (title, code) in enumerate(presets):
-            tk.Radiobutton(
-                grid, text=title, variable=self.selected_rhythm, value=code, indicatoron=False,
-                bg=THEME["bg_card"], fg=THEME["text_sub"], selectcolor="#344f73",
-                activebackground=THEME["bg_card_hover"], activeforeground=THEME["text_main"],
-                relief="flat", overrelief="flat", borderwidth=0, highlightthickness=1,
-                highlightbackground=THEME["border"], highlightcolor=THEME["accent_cyan"],
-                font=(FONT_FAMILY, 11), padx=10, pady=16, cursor="hand2",
-            ).grid(row=idx // 2, column=idx % 2, sticky="ew", padx=4, pady=4)
-        form = StudioGroup(parent, text="PHẠM VI & THÔNG SỐ", bg=THEME["bg_panel"], padx=4, pady=12)
+            button = RoundedButton(grid, text=title, height=44, width=160,
+                                   command=lambda value=code: self._select_rhythm(value))
+            button.grid(row=idx // 2, column=idx % 2, sticky="ew", padx=4, pady=4)
+            self.rhythm_buttons[code] = (button, title)
+        self._select_rhythm("pulse_1s")
+        form = StudioGroup(inner, text="PHẠM VI & THÔNG SỐ", bg=THEME["bg_panel"], padx=4, pady=12)
         form.pack(fill="x", pady=(18, 0))
         tk.Label(form, text="Track nhận hiệu ứng", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(anchor="w")
         self.rhythm_track_combo = ttk.Combobox(form, state="readonly")
@@ -759,12 +775,12 @@ class CapCutStudioDesktopApp:
         self.spin_scale_peak = ttk.Spinbox(row, from_=0.5, to=3.0, increment=0.05, width=6)
         self.spin_scale_peak.set(1.25)
         self.spin_scale_peak.pack(side="left", padx=8)
-        RoundedButton(parent, text="Áp dụng chuyển động", height=42, variant="primary",
-                      command=lambda: self._apply_rhythm_preset(self.selected_rhythm.get())).pack(fill="x", pady=(16, 8))
-        tk.Label(parent, text="Tự động tạo bản sao lưu trước khi ghi.",
-                 bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9)).pack(anchor="w")
-        RoundedButton(parent, text="Xóa keyframe trên track đã chọn", height=34, variant="danger",
-                      command=self._clear_keyframes_on_track).pack(fill="x", pady=(12, 0))
+    def _select_rhythm(self, code):
+        self.selected_rhythm.set(code)
+        for value, (button, title) in self.rhythm_buttons.items():
+            button.bg_color = "#30455f" if value == code else THEME["bg_card"]
+            button.text_color = THEME["text_main"] if value == code else THEME["text_sub"]
+            button.set_text(("●  " if value == code else "") + title)
 
     def _build_tab_speed(self, parent):
         group_presets = StudioGroup(parent, text="🏎️ CÁC MẪU UỐN TỐC ĐỘ (SPEED CURVE PRESETS)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
@@ -1574,35 +1590,57 @@ class CapCutStudioDesktopApp:
         if not self.current_project or not self.current_project_folder:
             return
         self._draw_speed_curve_preview(preset_code)
-
-        folder = self.current_project_folder
-        info_file = self.current_project.get("info_file")
-        with open(info_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
+        info_file = self.current_project["info_file"]
+        with open(info_file, encoding="utf-8") as stream:
+            data = json.load(stream)
+        speeds = data.setdefault("materials", {}).setdefault("speeds", [])
+        speed_ids = {material.get("id") for material in speeds}
         applied = 0
         for track in data.get("tracks", []):
             if track.get("type") != "video":
                 continue
-            for seg in track.get("segments", []):
-                du_us = seg.get("target_timerange", {}).get("duration", 0)
-                if preset_code == "hero_ramp":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_hero_ramp(du_us))
-                    applied += 1
+            shift = 0
+            for seg in sorted(track.get("segments", []), key=lambda item: item.get("target_timerange", {}).get("start", 0)):
+                timing = seg.setdefault("target_timerange", {})
+                timing["start"] = timing.get("start", 0) + shift
+                source = seg.get("source_timerange") or {}
+                if source.get("duration", 0) <= 0:
+                    continue
+                if preset_code == "reset":
+                    material = None
+                elif preset_code == "hero_ramp":
+                    material = SpeedRampEngine.preset_hero(fast_speed=2.5, slow_speed=0.3)
                 elif preset_code == "bullet_time":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_bullet_time(du_us))
-                    applied += 1
+                    material = SpeedRampEngine.preset_bullet_time(ultra_slow=0.15)
                 elif preset_code == "flash_in_out":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_flash_in_out(du_us))
-                    applied += 1
-                elif preset_code == "reset":
-                    SpeedRampEngine.reset_segment_speed(seg)
-                    applied += 1
-
-        if applied > 0:
-            self.adapter.save_project_data(folder, data)
+                    material = SpeedRampEngine.create_speed_material("Flash in / out", [
+                        {"x": 0, "y": 4}, {"x": 0.2, "y": 1},
+                        {"x": 0.8, "y": 1}, {"x": 1, "y": 4}])
+                elif preset_code == "beat_sync":
+                    duration = source["duration"]
+                    start = seg.get("target_timerange", {}).get("start", 0)
+                    material = SpeedRampEngine.generate_beat_speed_ramp(
+                        start, duration, list(range(start, start + duration, 500000)))
+                else:
+                    raise ValueError("Preset tốc độ không hợp lệ")
+                seg["extra_material_refs"] = [ref for ref in seg.get("extra_material_refs", []) if ref not in speed_ids]
+                if material:
+                    speeds.append(material)
+                    seg["extra_material_refs"].append(material["id"])
+                    seg["speed"] = material["speed"]
+                else:
+                    seg["speed"] = 1.0
+                old_duration = timing.get("duration", 0)
+                timing["duration"] = max(1, round(source["duration"] / seg["speed"]))
+                shift += timing["duration"] - old_duration
+                applied += 1
+        if applied:
+            data["duration"] = max((seg.get("target_timerange", {}).get("start", 0) + seg.get("target_timerange", {}).get("duration", 0) for track in data.get("tracks", []) for seg in track.get("segments", [])), default=0)
+            self.adapter.save_project_data(self.current_project_folder, data)
             self._load_project_by_index(self.proj_combo.current())
-            messagebox.showinfo("Thành Công", f"Đã áp dụng uốn tốc độ '{preset_code}' vào {applied} clip!")
+            messagebox.showinfo("Đã áp dụng", f"Đã cập nhật tốc độ cho {applied} clip. Kiểm tra thời lượng trong CapCut.")
+        else:
+            messagebox.showinfo("Chưa áp dụng", "Không có clip có khoảng thời gian nguồn hợp lệ.")
 
     def _execute_stabilizer(self):
         if not self.current_project or not self.current_project_folder:
@@ -1628,14 +1666,17 @@ class CapCutStudioDesktopApp:
             mode = "dead_lock" if "Khóa Mốc" in self.stab_mode_combo.get() else "smooth"
             zoom_val = float(self.stab_zoom_combo.get().replace("x", ""))
 
-            engine = StabilizerEngine()
-            kfs = engine.stabilize_video_clip(
+            result = StabilizerEngine.track_and_stabilize(
                 target_video,
-                target_seg.get("start_seconds", 0.0),
-                target_seg.get("duration_seconds", 0.0),
-                mode=mode,
-                auto_zoom=zoom_val
+                start_seconds=target_seg.get("source_start_seconds", 0.0),
+                duration_seconds=target_seg.get("source_duration_seconds") or target_seg.get("duration_seconds", 0.0),
+                stabilize_mode=mode,
+                min_zoom=zoom_val,
+                fps=int(self.current_project.get("fps", 30) or 30)
             )
+            if result.get("status") != "success":
+                raise RuntimeError(result.get("message", "Không đọc được video nguồn"))
+            kfs = result["keyframes"]
 
             info_file = self.current_project.get("info_file")
             with open(info_file, "r", encoding="utf-8") as f:
