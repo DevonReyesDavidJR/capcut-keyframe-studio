@@ -1,0 +1,123 @@
+name: Build and publish apps
+# Pushes to main build and validate the installers; pushing a vX.Y.Z tag also publishes them.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - ".github/workflows/release.yml"
+      - "release_tools/**"
+      - "run.py"
+      - "desktop_app.py"
+      - "desktop_update.py"
+      - "core/**"
+      - "web/**"
+      - "requirements*.txt"
+      - "RELEASE_GUIDE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: python -m pip install -r requirements.txt
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m compileall -q core desktop_app.py desktop_update.py server.py run.py release_tools
+      - run: node --check web/app.js
+      - run: python -m release_tools.regression
+      - run: python -m unittest release_tools.test_updater
+      - run: python -m release_tools.smoke_web
+      - run: python release_tools/build_web.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-edition
+          path: dist/CapCut-Keyframe-Studio-Web.zip
+          if-no-files-found: error
+
+  desktop:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            artifact: macos-arm64
+          - os: macos-15-intel
+            artifact: macos-x86_64
+          - os: windows-latest
+            artifact: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r requirements-build.txt
+      - run: python release_tools/build.py
+      - name: Validate packaged desktop startup
+        shell: python
+        run: |
+          import os
+          import subprocess
+          executable = (
+              "dist/CapCut Keyframe Studio/CapCut Keyframe Studio.exe"
+              if os.name == "nt" else
+              "dist/CapCut Keyframe Studio.app/Contents/MacOS/CapCut Keyframe Studio"
+          )
+          subprocess.run([executable, "--self-test"], check=True, timeout=90)
+      - name: Capture macOS native visual check
+        if: matrix.artifact == 'macos-arm64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m release_tools.visual_check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/*.png
+            dist/*.dmg
+            dist/*-Setup.exe
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [validate, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match core/version.py
+        run: |
+          python -c 'import os, re; v = re.search(r"APP_VERSION = \"(.+?)\"", open("core/version.py").read()).group(1); assert "v" + v == os.environ["GITHUB_REF_NAME"], (v, os.environ["GITHUB_REF_NAME"])'
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Keep only the editor snapshots
+        run: rm -f release-assets/Desktop-Update.png
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum *.dmg *.exe *.zip *.png > SHA256SUMS.txt
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=RELEASE_GUIDE.md
+          [ -f "release_notes/$GITHUB_REF_NAME.md" ] && notes="release_notes/$GITHUB_REF_NAME.md"
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; *) flags="--latest" ;; esac
+          gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "CapCut Keyframe Studio $GITHUB_REF_NAME" --notes-file "$notes" $flags

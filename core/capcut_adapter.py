@@ -232,7 +232,8 @@ class CapCutAdapter:
                     "speed": seg.get("speed", 1.0),
                     "keyframes": kf_summary,
                     "has_keyframes": len(common_kf) > 0,
-                    "raw_common_keyframes": common_kf
+                    "raw_common_keyframes": common_kf,
+                    "clip": seg.get("clip") or {}
                 })
 
             parsed_tracks.append({
