@@ -1,8 +1,4 @@
-# CapCut Keyframe Studio Pro
-# 100% pure standard library compatible out of the box!
-# No mandatory pip packages required.
+# Runtime dependencies
+Pillow>=10.4,<12
 
-# Optional performance & audio dependencies:
-# numpy>=1.22.0
-# scipy>=1.9.0
-
+# FFmpeg must be installed separately and available on PATH for video/audio tools.
