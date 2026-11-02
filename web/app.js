@@ -19,6 +19,11 @@ let previewMode = "composite"; // "composite" or "solo"
 let trackVisibility = {}; // { trackIndex: boolean }
 let timelineZoomPxPerSec = 75;
 let cachedLayerImages = {};
+// Last frame that finished loading per segment, shown while the next frame is fetched
+let lastLayerFrames = {};
+// Playback prefetch per segment: the source range [start, end) the server already has decoded
+let layerBursts = {};
+const BURST_SECONDS = 2.0;
 
 // Hand-drawn motion path state. Points are [x, y, t] in CapCut position units
 // (0 = center, ±1 = screen edge, +y = up) and t = seconds since the stroke began.
@@ -694,6 +699,8 @@ async function selectProject(folderName) {
 
 function renderProjectWorkspace() {
   cachedLayerImages = {};
+  lastLayerFrames = {};
+  layerBursts = {};
   document.getElementById("noProjectSelected").classList.add("hidden");
   const ws = document.getElementById("projectWorkspace");
   ws.classList.remove("hidden");
@@ -904,6 +911,34 @@ function toggleTrackVisibility(trackIdx) {
   updateMasterPreview();
 }
 
+/**
+ * Playback prefetch: one request makes the server decode the next BURST_SECONDS of a clip.
+ * Starts the following batch before the current one runs out. Returns true when the server
+ * already holds the frame at sourceT, so requesting it is instant.
+ */
+function ensureLayerBurst(seg, sourceT, w, h) {
+  const burst = layerBursts[seg.id] || (layerBursts[seg.id] = { start: -1, end: -1, inflight: false, w });
+  const covered = burst.w === w && sourceT >= burst.start && sourceT < burst.end - 0.05;
+  if (!burst.inflight && (!covered || sourceT > burst.end - 1.4)) {
+    const from = covered ? burst.end : sourceT;
+    const url = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${from.toFixed(2)}&w=${w}&h=${h}`;
+    const prefetch = new Image();
+    burst.inflight = true;
+    prefetch.onload = prefetch.onerror = () => {
+      burst.inflight = false;
+      if (!covered || burst.w !== w) burst.start = from;
+      burst.end = from + BURST_SECONDS;
+      burst.w = w;
+      if (prefetch.naturalWidth > 0) {
+        cachedLayerImages[url] = prefetch;
+        lastLayerFrames[seg.id] = prefetch;
+      }
+    };
+    prefetch.src = url + "&burst=1";
+  }
+  return covered;
+}
+
 function updateMasterPreview() {
   if (!activeProject) return;
 
@@ -973,6 +1008,19 @@ function updateMasterPreview() {
     }
   }
 
+  // While playing, warm up clips that start within the next 1.5s so the cut has a frame ready
+  if (isPlaying) {
+    (activeProject.tracks || []).forEach(track => {
+      if (track.type !== "video") return;
+      track.segments.forEach(seg => {
+        const lead = (seg.start_seconds || 0) - playheadTime;
+        if (lead > 0 && lead < 1.5 && /\.(mp4|mov|m4v|webm)$/i.test(seg.file_path || "")) {
+          ensureLayerBurst(seg, Math.round((seg.source_start_seconds || 0) * 10) / 10, Math.round(cw / 2), Math.round(ch / 2));
+        }
+      });
+    });
+  }
+
   // Draw Visual Layers onto Canvas from bottom layer (Track 0) to top layer
   activeSegments.sort((a, b) => a.track.index - b.track.index);
   activeSegments.forEach(({ track, seg }) => {
@@ -1001,14 +1049,25 @@ function updateMasterPreview() {
 
     const srcStartSec = seg.source_start_seconds || 0;
     const isMp4 = /\.(mp4|mov|m4v|webm)$/i.test(seg.file_path);
-    const srcOffsetSec = isMp4 ? Math.max(0, (relSec * (seg.speed || 1.0)) + srcStartSec) : 0;
-    const imgUrl = `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${srcOffsetSec.toFixed(2)}&w=${cw}&h=${ch}`;
+    let srcOffsetSec = isMp4 ? Math.max(0, (relSec * (seg.speed || 1.0)) + srcStartSec) : 0;
+    // During playback, snap to 0.1s and halve the size so frames come back fast and repeat from cache
+    const streaming = isPlaying && isMp4;
+    if (streaming) srcOffsetSec = Math.round(srcOffsetSec * 10) / 10;
+    const reqW = isPlaying ? Math.round(cw / 2) : cw;
+    const reqH = isPlaying ? Math.round(ch / 2) : ch;
+    const frameUrl = (t) => `/api/media_frame?path=${encodeURIComponent(seg.file_path)}&t=${t.toFixed(2)}&w=${reqW}&h=${reqH}`;
+    const imgUrl = frameUrl(srcOffsetSec);
+
+    const canRequest = !streaming || ensureLayerBurst(seg, srcOffsetSec, reqW, reqH);
 
     let img = cachedLayerImages[imgUrl];
-    if (!img) {
+    if (!img && !canRequest) {
+      img = lastLayerFrames[seg.id] || new Image();
+    } else if (!img) {
       img = new Image();
       img.src = imgUrl;
       img.onload = () => {
+        lastLayerFrames[seg.id] = img;
         if (!isPlaying) updateMasterPreview();
       };
       img.onerror = () => {
@@ -1017,11 +1076,15 @@ function updateMasterPreview() {
         if (!isPlaying) updateMasterPreview();
       };
       const cacheKeys = Object.keys(cachedLayerImages);
-      if (cacheKeys.length >= 48) delete cachedLayerImages[cacheKeys[0]];
+      if (cacheKeys.length >= 240) delete cachedLayerImages[cacheKeys[0]];
       cachedLayerImages[imgUrl] = img;
     }
 
+    if (!(img.complete && img.naturalWidth > 0) && !img.dataset.failed && lastLayerFrames[seg.id]) {
+      img = lastLayerFrames[seg.id];
+    }
     if (img.complete && img.naturalWidth > 0) {
+      lastLayerFrames[seg.id] = img;
       const imgAspect = img.naturalWidth / img.naturalHeight;
       const canvasAspect = cw / ch;
       let drawW = cw;

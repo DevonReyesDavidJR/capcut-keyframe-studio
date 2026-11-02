@@ -27,6 +27,52 @@ from core.stabilizer_engine import StabilizerEngine
 
 adapter = CapCutAdapter()
 _frame_cache: Dict[str, Any] = {}
+_FRAME_CACHE_LIMIT = 800
+
+
+def _remember_frame(key: str, value: Any) -> None:
+    """Keeps the most recently extracted frames; the oldest entry is dropped when full."""
+    _frame_cache.pop(key, None)
+    _frame_cache[key] = value
+    while len(_frame_cache) > _FRAME_CACHE_LIMIT:
+        _frame_cache.pop(next(iter(_frame_cache)))
+
+
+def _extract_video_frames(file_path: str, time_s: float, width: int, height: int,
+                          quality: int, count: int) -> List[bytes]:
+    """
+    Decodes `count` JPEG frames starting at time_s (10 fps when count > 1) in a single FFmpeg run.
+    Uses VideoToolbox hardware decoding on macOS and retries in software if that fails.
+    """
+    vf = f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=bicubic,setsar=1"
+    if count > 1:
+        vf = "fps=10," + vf
+    attempts = [["-hwaccel", "videotoolbox"], []] if sys.platform == "darwin" else [[]]
+    for hw in attempts:
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *hw,
+               "-ss", f"{time_s:.3f}", "-i", file_path, "-an", "-sn", "-dn",
+               "-frames:v", str(count), "-vf", vf,
+               "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", str(quality), "pipe:1"]
+        try:
+            out = subprocess.run(cmd, capture_output=True, timeout=30).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        frames = _split_jpeg_stream(out)
+        if frames:
+            return frames
+    return []
+
+
+def _split_jpeg_stream(data: bytes) -> List[bytes]:
+    """Splits concatenated MJPEG output into individual JPEG images (SOI ... EOI)."""
+    frames, start = [], data.find(b"\xff\xd8")
+    while start != -1:
+        end = data.find(b"\xff\xd9", start + 2)
+        if end == -1:
+            break
+        frames.append(data[start:end + 2])
+        start = data.find(b"\xff\xd8", end + 2)
+    return frames
 
 class CapCutAPIHandler(SimpleHTTPRequestHandler):
     """Handles REST API calls and serves static Web UI assets."""
@@ -108,8 +154,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     with open(file_path, "rb") as f:
                         data = f.read()
                     mime = {".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
-                    if len(_frame_cache) < 400:
-                        _frame_cache[cache_key] = (data, mime)
+                    _remember_frame(cache_key, (data, mime))
                     self.send_response(200)
                     self.send_header("Content-Type", mime)
                     self.send_header("Cache-Control", "public, max-age=86400")
@@ -124,41 +169,17 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
 
             elif ext in [".mp4", ".mov", ".m4v", ".webm"]:
                 time_s = max(0.0, time_s)
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-ss", f"{time_s:.3f}",
-                    "-i", file_path,
-                    "-vframes", "1",
-                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1",
-                    "-f", "image2",
-                    "-c:v", "mjpeg",
-                    "-strict", "-1",
-                    "-q:v", str(quality),
-                    "pipe:1"
-                ]
+                # Playback asks for a burst: one FFmpeg run decodes the next 2s at 10 fps into the cache
+                burst = params.get("burst", ["0"])[0] == "1"
                 try:
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    out, _ = proc.communicate()
-                    if proc.returncode != 0 or not out:
-                        # Fallback: extract at 0.0 if seeking past duration
-                        cmd_fb = [
-                            "ffmpeg", "-y",
-                            "-ss", "0.000",
-                            "-i", file_path,
-                            "-vframes", "1",
-                            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1",
-                            "-f", "image2",
-                            "-c:v", "mjpeg",
-                            "-strict", "-1",
-                            "-q:v", str(quality),
-                            "pipe:1"
-                        ]
-                        proc_fb = subprocess.Popen(cmd_fb, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        out, _ = proc_fb.communicate()
-
-                    if out:
-                        if len(_frame_cache) < 500:
-                            _frame_cache[cache_key] = (out, "image/jpeg")
+                    frames = _extract_video_frames(file_path, time_s, width, height, quality, 20 if burst else 1)
+                    if not frames:
+                        # Seeking past the end of the source: show its first frame instead
+                        frames = _extract_video_frames(file_path, 0.0, width, height, quality, 1)
+                    if frames:
+                        for i, frame in enumerate(frames):
+                            _remember_frame(f"{file_path}_{time_s + i * 0.1:.2f}_{width}_{height}", (frame, "image/jpeg"))
+                        out = frames[0]
                         self.send_response(200)
                         self.send_header("Content-Type", "image/jpeg")
                         self.send_header("Cache-Control", "public, max-age=86400")
