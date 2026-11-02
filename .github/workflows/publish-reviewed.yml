@@ -13,21 +13,30 @@ jobs:
       - name: Verify tested source and completed build
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: ce2262168d6f332a0799eecbc6df22b6bc53efe8
+          EXPECTED_SHA: be14e4168f496660d2f1b16ea307bc613ee08a6f
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41383025389" > run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41385329250" > run.json
           python -c 'import json,os; r=json.load(open("run.json")); assert r["conclusion"]=="success" and r["head_sha"]==os.environ["EXPECTED_SHA"]'
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 41383025389
+          run-id: 41385329250
           path: release-assets
           merge-multiple: true
       - name: Prepare reviewed release notes
         shell: python
         run: |
           from pathlib import Path
-          Path("notes.md").write_text("""Native editor fixes after visual checks on macOS:
+          Path("notes.md").write_text("""GitHub in-app updates (Preview 3):
+          - New Update action: release notes, preview channel, architecture selection, verified download and installation/relaunch.
+          - Install this release manually once; subsequent updates can be installed inside the app.
+          - Download errors or checksum mismatches do not replace the installed app.
+          - macOS stages the update, waits for exit, preserves a previous app bundle and rolls back on move/open failure.
+          - Windows uses a detached per-user installer helper and relaunches the app.
+          - Desktop-Update.png shows the actual macOS update dialog with a simulated future release.
+          - Passed ten updater tests, existing regression tests and native startup checks.
+
+          Native editor fixes included:
           - Rebuilt button rendering, readable dark inputs, quieter colors and clear selected presets.
           - Keep Apply visible on small displays. Reserve transport space and allow the layer inspector to collapse for a larger preview.
           - Scroll through all tracks and layers; coalesce overlapping keyframe markers.
@@ -48,9 +57,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v0.2.0-preview.2 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
-            python -c 'import json; assert json.load(open("existing.json"))["targetCommitish"] == "ce2262168d6f332a0799eecbc6df22b6bc53efe8"'
+          if gh release view v0.2.0-preview.3 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
+            python -c 'import json; assert json.load(open("existing.json"))["targetCommitish"] == "be14e4168f496660d2f1b16ea307bc613ee08a6f"'
             echo "The reviewed build is already published."
           else
-            gh release create v0.2.0-preview.2 release-assets/* --repo "$GITHUB_REPOSITORY" --target "ce2262168d6f332a0799eecbc6df22b6bc53efe8" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
+            gh release create v0.2.0-preview.3 release-assets/* --repo "$GITHUB_REPOSITORY" --target "be14e4168f496660d2f1b16ea307bc613ee08a6f" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
           fi
