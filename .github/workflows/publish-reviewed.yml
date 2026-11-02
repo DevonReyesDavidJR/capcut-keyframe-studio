@@ -53,13 +53,19 @@ jobs:
       - name: Checksums
         working-directory: release-assets
         run: sha256sum *.dmg *.exe *.zip *.png > SHA256SUMS.txt
+      - name: Verify publisher changes do not change tested application code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/compare/be14e4168f496660d2f1b16ea307bc613ee08a6f...$GITHUB_SHA" > comparison.json
+          python -c 'import json; assert all(f["filename"] == ".github/workflows/publish-reviewed.yml" for f in json.load(open("comparison.json"))["files"])'
       - name: Publish reviewed artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view v0.2.0-preview.3 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
-            python -c 'import json; assert json.load(open("existing.json"))["targetCommitish"] == "be14e4168f496660d2f1b16ea307bc613ee08a6f"'
+            python -c 'import json,os; assert json.load(open("existing.json"))["targetCommitish"] == os.environ["GITHUB_SHA"]'
             echo "The reviewed build is already published."
           else
-            gh release create v0.2.0-preview.3 release-assets/* --repo "$GITHUB_REPOSITORY" --target "be14e4168f496660d2f1b16ea307bc613ee08a6f" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
+            gh release create v0.2.0-preview.3 release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
           fi
