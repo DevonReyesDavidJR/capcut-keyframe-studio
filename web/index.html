@@ -112,6 +112,9 @@
             <button class="tab-btn active" data-tab="tabPresets">
               ⚡ Presets Chuyển Động
             </button>
+            <button class="tab-btn text-cyan" data-tab="tabMotionPath">
+              ✏️ Vẽ Đường Đi
+            </button>
             <button class="tab-btn" data-tab="tabAIInspector">
               🤖 AI Soi & Check Khung Hình
             </button>
@@ -784,6 +787,51 @@
                 <button class="btn btn-secondary mt-6 w-full" id="btnShiftKeyframes">
                   ⏩ DỊCH CHUYỂN THỜI GIAN KEYFRAME
                 </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: HAND-DRAWN MOTION PATH -->
+          <div class="tab-pane" id="tabMotionPath">
+            <div class="curve-tools-layout">
+              <div class="curve-action-card">
+                <h4 class="subheading">✏️ Vẽ Đường Đi Cho Shot (Motion Path)</h4>
+                <ol class="path-steps text-sm text-muted mt-2">
+                  <li>Click chọn clip trên Timeline bên dưới.</li>
+                  <li>Bấm <b>Bắt Đầu Vẽ</b>, rồi giữ chuột kéo trên <b>Trình Phát Đa Lớp</b> bên phải để vẽ đường đi của tâm clip.</li>
+                  <li>Kéo <b>Độ mượt</b>: đường xanh là đường sẽ được dùng (🟢 điểm đầu, 🔴 điểm cuối).</li>
+                  <li>Bấm <b>Áp Dụng</b>. Keyframe Vị trí X/Y được tạo tự động.</li>
+                </ol>
+
+                <div class="flex items-center gap-2 mt-4">
+                  <button class="btn btn-secondary" id="btnPathDraw">✏️ Bắt Đầu Vẽ</button>
+                  <button class="btn btn-outline" id="btnPathClear">🗑️ Xóa Nét Vẽ</button>
+                </div>
+                <p class="text-xs text-muted mt-3" id="pathStatus">Chưa có nét vẽ.</p>
+              </div>
+
+              <div class="curve-action-card">
+                <div class="slider-row">
+                  <div class="slider-header">
+                    <span>Độ mượt:</span>
+                    <span id="pathSmoothVal" class="slider-value">50</span>
+                  </div>
+                  <input type="range" id="sliderPathSmooth" min="0" max="100" step="1" value="50" class="range-slider">
+                </div>
+
+                <div class="mt-4">
+                  <label class="text-sm" for="selectPathTiming">Nhịp chạy:</label>
+                  <select id="selectPathTiming" class="select-box w-full mt-1">
+                    <option value="ease">Mượt đầu &amp; cuối (Ease In-Out)</option>
+                    <option value="constant">Tốc độ đều suốt đường</option>
+                    <option value="drawn">Theo tốc độ vẽ tay</option>
+                  </select>
+                </div>
+
+                <button class="btn btn-primary mt-6 w-full" id="btnApplyMotionPath">
+                  🚀 ÁP DỤNG ĐƯỜNG ĐI CHO CLIP ĐÃ CHỌN
+                </button>
+                <p class="text-xs text-muted mt-2">Dự án sẽ được tự động sao lưu trước khi lưu.</p>
               </div>
             </div>
           </div>

@@ -26,7 +26,7 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Whip Pan**: Gạt chuyển cảnh tốc độ cao sang trái/phải/lên/xuống.
    - **Breathing Pulse**: Nhịp thở/đập tuần hoàn êm ái.
    - **Fade Opacity**: Làm mờ dần / Hiện dần clip.
-   - **✏️ Vẽ Đường Đi (Motion Path)**: Giữ chuột vẽ đường đi trực tiếp trên màn hình preview, tool tự làm mượt nét vẽ tay và tạo keyframe Vị trí X/Y để clip chạy theo đúng đường đó (chọn nhịp: mượt đầu & cuối, tốc độ đều, hoặc theo tốc độ vẽ tay).
+   - **✏️ Vẽ Đường Đi (Motion Path)** (app Desktop macOS / Windows và bản Web): Giữ chuột vẽ đường đi trực tiếp trên màn hình preview, tool tự làm mượt nét vẽ tay và tạo keyframe Vị trí X/Y để clip chạy theo đúng đường đó (chọn nhịp: mượt đầu & cuối, tốc độ đều, hoặc theo tốc độ vẽ tay).
 2. **📱 Trình Phát Xem Trước Đa Lớp & Timeline CapCut Trực Quan (Multi-Layer Viewer & Timeline)**:
    - **Màn hình Preview Đa Lớp (Composite Preview Monitor)**: Xem toàn bộ các layer video, ảnh phủ, mask, sticker chồng lên nhau tại bất kỳ khung hình nào theo đúng trục thứ tự hiển thị của CapCut.
    - **Tắt/Bật Mắt Ẩn Hiện Lớp (👁️ Layer Visibility)**: Dễ dàng ẩn hoặc hiện từng track để soi riêng chuyển động của layer đó hoặc xem tổng thể cả video.

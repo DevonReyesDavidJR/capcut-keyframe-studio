@@ -323,6 +323,15 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
             self._handle_apply_stabilizer(payload)
             return
 
+        # Hand-drawn motion path
+        if path == "/api/smooth_path":
+            self._handle_smooth_path(payload)
+            return
+
+        if path == "/api/apply_motion_path":
+            self._handle_apply_motion_path(payload)
+            return
+
         # Restore backup
         if path == "/api/restore_backup":
             folder_name = payload.get("folder_name", "")
@@ -699,6 +708,88 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 "status": "success",
                 "message": f"Cleared keyframes from {modified_count} clip(s)."
             })
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
+    @staticmethod
+    def _parse_path_points(raw_points: Any) -> List[tuple]:
+        """[[x, y, t], ...] from the client -> list of float tuples (CapCut position units, seconds)."""
+        points = []
+        for p in raw_points or []:
+            if isinstance(p, (list, tuple)) and len(p) >= 3:
+                points.append((float(p[0]), float(p[1]), float(p[2])))
+        return points
+
+    def _handle_smooth_path(self, payload: Dict[str, Any]):
+        """Returns the smoothed version of a stroke so the UI can preview exactly what will be applied."""
+        try:
+            points = self._parse_path_points(payload.get("points"))
+            smoothed = KeyframeEngine.smooth_motion_path(
+                points,
+                smoothing=float(payload.get("smoothing", 0.5)),
+                aspect=float(payload.get("aspect", 9 / 16.0))
+            )
+            self._send_json({"status": "success", "points": [[round(x, 4), round(y, 4)] for x, y, _ in smoothed]})
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 400)
+
+    def _handle_apply_motion_path(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+        smoothing = float(payload.get("smoothing", 0.5))
+        timing = payload.get("timing", "ease")
+        if timing not in ("ease", "constant", "drawn"):
+            timing = "ease"
+
+        try:
+            points = self._parse_path_points(payload.get("points"))
+            if len(points) < 2:
+                raise ValueError("Chưa có nét vẽ. Hãy kéo chuột vẽ đường đi trên màn hình preview.")
+
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            canvas_cfg = data.get("canvas_config", {})
+            aspect = (canvas_cfg.get("width") or 1080) / float(canvas_cfg.get("height") or 1920)
+            fps = int(data.get("fps", 30) or 30)
+            tracks = data.get("tracks", [])
+            modified_count, kf_count = 0, 0
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+                segs = tracks[t_idx].get("segments", [])
+                if s_idx >= len(segs):
+                    continue
+
+                seg = segs[s_idx]
+                dur_us = seg.get("target_timerange", {}).get("duration", 0)
+                if dur_us <= 0:
+                    continue
+                groups = KeyframeEngine.generate_motion_path_keyframes(
+                    points, dur_us, fps=fps, smoothing=smoothing, timing=timing, aspect=aspect
+                )
+                self._apply_groups_to_segment(seg, groups, replace_existing=True)
+                modified_count += 1
+                kf_count = len(groups[0]["keyframe_list"])
+
+            if modified_count == 0:
+                raise ValueError("Không có clip hợp lệ nào được chọn.")
+
+            adapter.save_project_data(folder_name, data)
+            self._send_json({
+                "status": "success",
+                "message": f"Đã tạo {kf_count} keyframe vị trí theo đường vẽ cho {modified_count} clip."
+            })
+        except ValueError as e:
+            self._send_json({"status": "error", "message": str(e)}, 400)
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 500)
 
