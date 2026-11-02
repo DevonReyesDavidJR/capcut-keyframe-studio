@@ -47,30 +47,30 @@ from core.stabilizer_engine import StabilizerEngine
 # PROFESSIONAL CAPCUT DARK PALETTE
 # ==============================================================================
 THEME = {
-    "bg_app": "#0e1015",         # Deep obsidian app background
-    "bg_panel": "#14161e",       # Sidebar and panel containers
-    "bg_card": "#1c1f2b",        # Cards and operation boxes
-    "bg_card_hover": "#252938",  # Card hover state
-    "bg_header": "#101218",      # Top header bar
-    "bg_input": "#252936",       # Combobox / Input field bg
-    "border": "#282d3c",         # Subtle dividers
-    "border_highlight": "#383f54",
-    "accent_cyan": "#00f2fe",    # CapCut Neon Cyan
-    "accent_blue": "#3b82f6",    # Action Blue
-    "accent_sky": "#38bdf8",     # Highlight Sky
-    "accent_green": "#10b981",   # Success Emerald
-    "accent_yellow": "#f59e0b",  # Warning Amber
-    "accent_red": "#ef4444",     # Delete Ruby Red
-    "accent_purple": "#8b5cf6",  # Special Purple
-    "text_main": "#ffffff",      # Crisp White
-    "text_sub": "#cbd5e1",       # Subdued White
-    "text_muted": "#848d9f",     # Dim Gray
-    "timeline_bg": "#12141c",    # Timeline canvas
-    "timeline_track": "#181a24", # Track row
-    "clip_video": "#2563eb",     # Video clip rectangle
-    "clip_image": "#7c3aed",     # Image clip rectangle
-    "clip_audio": "#059669",     # Audio clip rectangle
-    "keyframe_diamond": "#facc15"# Keyframe diamond
+    "bg_app": "#101216",         # Deep obsidian app background
+    "bg_panel": "#171a20",       # Sidebar and panel containers
+    "bg_card": "#20242c",        # Cards and operation boxes
+    "bg_card_hover": "#2b313c",  # Card hover state
+    "bg_header": "#171a20",      # Top header bar
+    "bg_input": "#262c36",       # Combobox / Input field bg
+    "border": "#303742",         # Subtle dividers
+    "border_highlight": "#4c5869",
+    "accent_cyan": "#79b8ff",    # CapCut Neon Cyan
+    "accent_blue": "#4f8ff7",    # Action Blue
+    "accent_sky": "#8ec5ff",     # Highlight Sky
+    "accent_green": "#7ccba2",   # Success Emerald
+    "accent_yellow": "#e5be79",  # Warning Amber
+    "accent_red": "#ec8790",     # Delete Ruby Red
+    "accent_purple": "#b7a0df",  # Special Purple
+    "text_main": "#e9edf3",      # Crisp White
+    "text_sub": "#c3ccd8",       # Subdued White
+    "text_muted": "#939fad",     # Dim Gray
+    "timeline_bg": "#111419",    # Timeline canvas
+    "timeline_track": "#1b2028", # Track row
+    "clip_video": "#344f73",     # Video clip rectangle
+    "clip_image": "#4a4265",     # Image clip rectangle
+    "clip_audio": "#315a50",     # Audio clip rectangle
+    "keyframe_diamond": "#e5be79"# Keyframe diamond
 }
 
 FONT_FAMILY = "Segoe UI" if platform.system() == "Windows" else "DejaVu Sans"
@@ -81,6 +81,14 @@ if platform.system() == "Darwin":
 # ==============================================================================
 # CUSTOM VECTOR CONTROLS (ROUNDED BUTTONS, SCRUBBERS, PILLS)
 # ==============================================================================
+class StudioGroup(tk.Frame):
+    """Flat section with a readable heading instead of a native etched border."""
+    def __init__(self, parent, text="", fg=None, font=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        tk.Label(self, text=text, bg=self.cget("bg"), fg=THEME["text_sub"],
+                 font=(FONT_FAMILY, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
+
+
 class RoundedButton(tk.Canvas):
     """Modern vector rounded button with smooth hover & active animations."""
 
@@ -127,7 +135,7 @@ class RoundedButton(tk.Canvas):
 
         if variant == "primary":
             self.bg_color = THEME["accent_cyan"]
-            self.hover_color = "#7de9df"
+            self.hover_color = "#a3ceff"
             self.text_color = "#000000"
         elif variant == "danger":
             self.bg_color = "#3d1417"
@@ -165,32 +173,18 @@ class RoundedButton(tk.Canvas):
     def _draw(self):
         self.delete("all")
         color = self.hover_color if self.is_hovered else self.bg_color
-        x0, y0, x1, y1 = 1, 1, self.w - 1, self.h - 1
-        r = self.r
-
-        # Draw rounded rectangle arcs & polygons
-        self.create_arc(x0, y0, x0 + 2*r, y0 + 2*r, start=90, extent=90, fill=color, outline="")
-        self.create_arc(x1 - 2*r, y0, x1, y0 + 2*r, start=0, extent=90, fill=color, outline="")
-        self.create_arc(x0, y1 - 2*r, x0 + 2*r, y1, start=180, extent=90, fill=color, outline="")
-        self.create_arc(x1 - 2*r, y1 - 2*r, x1, y1, start=270, extent=90, fill=color, outline="")
-        self.create_rectangle(x0 + r, y0, x1 - r, y1, fill=color, outline="")
-        self.create_rectangle(x0, y0 + r, x1, y1 - r, fill=color, outline="")
-
-        # Draw subtle border if not primary
-        if self.variant != "primary" or self.focus_get() == self:
-            border_col = THEME["accent_cyan"] if self.is_hovered or self.focus_get() == self else THEME["border"]
-            self.create_arc(x0, y0, x0 + 2*r, y0 + 2*r, start=90, extent=90, fill="", outline=border_col, width=1)
-            self.create_arc(x1 - 2*r, y0, x1, y0 + 2*r, start=0, extent=90, fill="", outline=border_col, width=1)
-            self.create_arc(x0, y1 - 2*r, x0 + 2*r, y1, start=180, extent=90, fill="", outline=border_col, width=1)
-            self.create_arc(x1 - 2*r, y1 - 2*r, x1, y1, start=270, extent=90, fill="", outline=border_col, width=1)
-            self.create_line(x0 + r, y0, x1 - r, y0, fill=border_col, width=1)
-            self.create_line(x0 + r, y1, x1 - r, y1, fill=border_col, width=1)
-            self.create_line(x0, y0 + r, x0, y1 - r, fill=border_col, width=1)
-            self.create_line(x1, y0 + r, x1, y1 - r, fill=border_col, width=1)
-
-        # Center Text
-        txt_col = "#000000" if (self.variant == "primary" or (self.is_hovered and self.variant == "danger")) else self.text_color
-        self.create_text(self.w / 2, self.h / 2, text=self.btn_text, fill=txt_col, font=self.font)
+        w, h = max(4, self.w), max(4, self.h)
+        r = min(7, (h - 2) / 2, (w - 2) / 2)
+        x0, y0, x1, y1 = 1, 1, w - 1, h - 1
+        points = [
+            x0+r, y0, x1-r, y0, x1, y0, x1, y0+r,
+            x1, y1-r, x1, y1, x1-r, y1, x0+r, y1,
+            x0, y1, x0, y1-r, x0, y0+r, x0, y0,
+        ]
+        focused = self.focus_get() == self
+        outline = THEME["accent_cyan"] if focused else (color if self.variant == "primary" else THEME["border"])
+        self.create_polygon(points, smooth=True, splinesteps=24, fill=color, outline=outline, width=1)
+        self.create_text(w / 2, h / 2, text=self.btn_text, fill=self.text_color, font=self.font)
 
     def _on_resize(self, event):
         self.w = event.width
@@ -391,7 +385,7 @@ class PILMediaCompositor:
                 "-strict", "-1",
                 "-f", "image2pipe", "-vcodec", "png", "pipe:1"
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=8)
             if res.returncode == 0 and res.stdout:
                 img = Image.open(io.BytesIO(res.stdout)).convert("RGBA")
                 with self.lock:
@@ -436,7 +430,7 @@ class PILMediaCompositor:
             def_tx = clip_prop.get("transform", {}).get("x", 0.0) if clip_prop.get("transform") else 0.0
             def_ty = clip_prop.get("transform", {}).get("y", 0.0) if clip_prop.get("transform") else 0.0
             def_sx = clip_prop.get("scale", {}).get("x", 1.0) if clip_prop.get("scale") else 1.0
-            def_sy = clip_prop.get("scale", {}).get("y", 1.0) if clip_prop.get("scale") else 1.0
+            def_sy = clip_prop.get("scale", {}).get("y", def_sx) if clip_prop.get("scale") else def_sx
             def_rot = clip_prop.get("rotation", 0.0)
 
             kf_dict = {}
@@ -447,7 +441,7 @@ class PILMediaCompositor:
             cur_tx = interpolator.evaluate_property(kf_dict.get("KFTypePositionX", []), offset_us, def_tx)
             cur_ty = interpolator.evaluate_property(kf_dict.get("KFTypePositionY", []), offset_us, def_ty)
             cur_sx = interpolator.evaluate_property(kf_dict.get("KFTypeScaleX", []), offset_us, def_sx)
-            cur_sy = interpolator.evaluate_property(kf_dict.get("KFTypeScaleY", []), offset_us, def_sy)
+            cur_sy = interpolator.evaluate_property(kf_dict.get("KFTypeScaleY", kf_dict.get("KFTypeScaleX", [])), offset_us, def_sy)
             cur_rot = interpolator.evaluate_property(kf_dict.get("KFTypeRotation", []), offset_us, def_rot)
 
             is_in_viewport = (-1.1 <= cur_tx <= 1.1) and (-1.1 <= cur_ty <= 1.1)
@@ -510,6 +504,11 @@ class PILMediaCompositor:
             pos_x = int((cw / 2.0) + cur_tx * (cw / 2.0) - (rw / 2.0))
             pos_y = int((ch / 2.0) - cur_ty * (ch / 2.0) - (rh / 2.0))
 
+            opacity = interpolator.evaluate_property(kf_dict.get("KFTypeAlpha", []), offset_us, clip_prop.get("alpha", 1.0))
+            opacity = max(0.0, min(1.0, opacity))
+            if opacity < 1.0:
+                resized.putalpha(resized.getchannel("A").point(lambda a: round(a * opacity)))
+
             # Alpha Composite onto the strict (cw, ch) phone buffer!
             comp.alpha_composite(resized, (pos_x, pos_y))
 
@@ -523,8 +522,8 @@ class CapCutStudioDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("🎬 CapCut Keyframe Studio Pro - Desktop Edition")
-        self.root.geometry("1480x940")
-        self.root.minsize(1160, 720)
+        self.root.geometry("1440x940")
+        self.root.minsize(1120, 760)
         self.root.configure(bg=THEME["bg_app"])
 
         # Core Engines
@@ -550,8 +549,8 @@ class CapCutStudioDesktopApp:
         # Build UI
         self._setup_ttk_styles()
         self._build_header_bar()
-        self._build_main_split()
         self._build_timeline_bar()
+        self._build_main_split()
         self._bind_keyboard_shortcuts()
 
         # Load projects
@@ -611,65 +610,58 @@ class CapCutStudioDesktopApp:
         )
         style.map("Treeview", background=[("selected", "#1e3a8a")], foreground=[("selected", "#ffffff")])
 
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", THEME["bg_input"])],
+                  foreground=[("readonly", THEME["text_main"])],
+                  selectbackground=[("readonly", THEME["bg_input"])],
+                  selectforeground=[("readonly", THEME["text_main"])])
+        style.configure("TSpinbox", fieldbackground=THEME["bg_input"], foreground=THEME["text_main"],
+                        background=THEME["bg_card"], arrowcolor=THEME["text_sub"], borderwidth=0, padding=5)
+        style.map("TSpinbox", fieldbackground=[("!disabled", THEME["bg_input"])],
+                  foreground=[("!disabled", THEME["text_main"])])
+        style.configure("TScrollbar", background=THEME["bg_card_hover"], troughcolor=THEME["bg_panel"],
+                        borderwidth=0, arrowsize=12)
+        style.configure("TNotebook.Tab", borderwidth=0, padding=[10, 10])
+        style.configure("Treeview.Heading", background=THEME["bg_panel"], foreground=THEME["text_sub"])
+        self.root.option_add("*TCombobox*Listbox.background", THEME["bg_input"])
+        self.root.option_add("*TCombobox*Listbox.foreground", THEME["text_main"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#344f73")
+
     # --------------------------------------------------------------------------
     # HEADER BAR
     # --------------------------------------------------------------------------
     def _build_header_bar(self):
-        header = tk.Frame(self.root, bg=THEME["bg_header"], height=58, padx=18, pady=10)
+        header = tk.Frame(self.root, bg=THEME["bg_header"], padx=20, pady=14)
         header.pack(side="top", fill="x")
-
-        # Brand Title
-        brand_box = tk.Frame(header, bg=THEME["bg_header"])
-        brand_box.pack(side="left")
-
-        lbl_logo = tk.Label(
-            brand_box,
-            text="🎬 CAPCUT KEYFRAME STUDIO",
-            bg=THEME["bg_header"],
-            fg=THEME["accent_cyan"],
-            font=(FONT_FAMILY, 13, "bold")
-        )
-        lbl_logo.pack(side="left")
-
-        lbl_pro = tk.Label(
-            brand_box,
-            text=" PRO ",
-            bg=THEME["accent_cyan"],
-            fg="#000000",
-            font=(FONT_FAMILY, 9, "bold")
-        )
-        lbl_pro.pack(side="left", padx=6)
-
-        # Project Selector
-        proj_box = tk.Frame(header, bg=THEME["bg_header"], padx=24)
-        proj_box.pack(side="left", fill="x", expand=True)
-
-        tk.Label(proj_box, text="Dự án:", bg=THEME["bg_header"], fg=THEME["text_muted"], font=(FONT_FAMILY, 10)).pack(side="left", padx=4)
-        self.proj_combo = ttk.Combobox(proj_box, state="readonly", width=34)
-        self.proj_combo.pack(side="left", padx=4)
-        self.proj_combo.bind("<<ComboboxSelected>>", self._on_project_selected)
-
-        btn_browse = RoundedButton(proj_box, text="📂 Thư Mục...", width=95, height=28, command=self._browse_custom_dir)
-        btn_browse.pack(side="left", padx=4)
-
-        btn_refresh = RoundedButton(proj_box, text="🔄 Làm Mới", width=85, height=28, command=self._refresh_projects)
-        btn_refresh.pack(side="left", padx=4)
-
-        # Project Meta Badges
+        tk.Label(header, text="Keyframe Studio", bg=THEME["bg_header"], fg=THEME["text_main"],
+                 font=(FONT_FAMILY, 16, "bold")).pack(side="left")
+        tk.Label(header, text="  /  CapCut Desktop", bg=THEME["bg_header"], fg=THEME["text_muted"],
+                 font=(FONT_FAMILY, 10)).pack(side="left")
         self.meta_frame = tk.Frame(header, bg=THEME["bg_header"])
         self.meta_frame.pack(side="right")
-
-        self.lbl_duration = tk.Label(self.meta_frame, text="⏱️ 00.00s", bg=THEME["bg_card"], fg=THEME["text_main"], font=(FONT_FAMILY, 9, "bold"), padx=10, pady=4)
-        self.lbl_duration.pack(side="left", padx=3)
-
-        self.lbl_fps = tk.Label(self.meta_frame, text="⚡ 60 FPS", bg=THEME["bg_card"], fg=THEME["accent_green"], font=(FONT_FAMILY, 9, "bold"), padx=10, pady=4)
-        self.lbl_fps.pack(side="left", padx=3)
-
-        self.lbl_tracks = tk.Label(self.meta_frame, text="🎞️ 0 Tracks", bg=THEME["bg_card"], fg=THEME["text_sub"], font=(FONT_FAMILY, 9), padx=10, pady=4)
-        self.lbl_tracks.pack(side="left", padx=3)
-
-        self.btn_backups = RoundedButton(self.meta_frame, text="🛡️ Sao Lưu", width=85, height=26, variant="warning", command=self._show_backup_tab)
-        self.btn_backups.pack(side="left", padx=4)
+        self.lbl_duration = tk.Label(self.meta_frame, text="0.00s", bg=THEME["bg_header"],
+                                     fg=THEME["text_sub"], padx=10)
+        self.lbl_duration.pack(side="left")
+        self.lbl_fps = tk.Label(self.meta_frame, text="30 FPS", bg=THEME["bg_header"],
+                                fg=THEME["text_sub"], padx=10)
+        self.lbl_fps.pack(side="left")
+        self.lbl_tracks = tk.Label(self.meta_frame, text="0 tracks", bg=THEME["bg_header"],
+                                   fg=THEME["text_sub"], padx=10)
+        self.lbl_tracks.pack(side="left")
+        self.btn_backups = RoundedButton(self.meta_frame, text="Sao lưu", width=100, height=32,
+                                          command=self._show_backup_tab)
+        self.btn_backups.pack(side="left", padx=(12, 0))
+        project_bar = tk.Frame(self.root, bg=THEME["bg_app"], padx=20, pady=10)
+        project_bar.pack(side="top", fill="x")
+        tk.Label(project_bar, text="DỰ ÁN", bg=THEME["bg_app"], fg=THEME["text_muted"],
+                 font=(FONT_FAMILY, 9, "bold")).pack(side="left", padx=(0, 16))
+        self.proj_combo = ttk.Combobox(project_bar, state="readonly", width=42)
+        self.proj_combo.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        self.proj_combo.bind("<<ComboboxSelected>>", self._on_project_selected)
+        RoundedButton(project_bar, text="Chọn thư mục", width=118, height=34,
+                      command=self._browse_custom_dir).pack(side="left", padx=4)
+        RoundedButton(project_bar, text="Làm mới", width=88, height=34,
+                      command=self._refresh_projects).pack(side="left", padx=4)
 
     # --------------------------------------------------------------------------
     # MAIN SPLIT CONTAINER
@@ -680,11 +672,11 @@ class CapCutStudioDesktopApp:
 
         # Left Operations Panel
         self.left_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.left_panel, minsize=480, width=540)
+        self.split_pane.add(self.left_panel, minsize=380, width=420)
 
         # Right Studio Monitor Panel
         self.right_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.right_panel, minsize=520)
+        self.split_pane.add(self.right_panel, minsize=620)
 
         self._build_operations_tabs()
         self._build_studio_monitor()
@@ -722,108 +714,60 @@ class CapCutStudioDesktopApp:
         self._build_tab_backups(tab_backup)
 
     def _build_tab_rhythm(self, parent):
-        scroll_canvas = tk.Canvas(parent, bg=THEME["bg_panel"], highlightthickness=0)
-        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=scroll_canvas.yview)
-        inner = tk.Frame(scroll_canvas, bg=THEME["bg_panel"])
-        inner.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
-        inner_window = scroll_canvas.create_window((0, 0), window=inner, anchor="nw")
-        scroll_canvas.bind("<Configure>", lambda e: scroll_canvas.itemconfigure(inner_window, width=e.width))
-        scroll_canvas.configure(yscrollcommand=scrollbar.set)
-        scroll_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # 1-Click Rhythmic Presets Group
-        group_1click = tk.LabelFrame(inner, text="⚡ 1-CLICK PRESETS CHUYỂN ĐỘNG THEO NHỊP", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
-        group_1click.pack(fill="x", pady=4)
-
+        tk.Label(parent, text="Chuyển động", bg=THEME["bg_panel"], fg=THEME["text_main"],
+                 font=(FONT_FAMILY, 15, "bold")).pack(anchor="w", pady=(8, 4))
+        tk.Label(parent, text="Chọn hiệu ứng, kiểm tra phạm vi rồi áp dụng.",
+                 bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 10)).pack(anchor="w", pady=(0, 18))
+        self.selected_rhythm = tk.StringVar(value="pulse_1s")
+        grid = tk.Frame(parent, bg=THEME["bg_panel"])
+        grid.pack(fill="x")
+        for col in range(2):
+            grid.columnconfigure(col, weight=1, uniform="presets")
         presets = [
-            ("🔁 Đảo Nhịp In / Out (Switch Clip)", "switch_in_out", "So le nhịp vào/ra giữa các clip liên tiếp (chuẩn Halloween/Sale)"),
-            ("⏱️ Nhịp Đều 1 Giây (1s Pulse)", "pulse_1s", "Chu kỳ phóng to thu nhỏ mỗi 1.0 giây theo nhịp TVC"),
-            ("⏱️ Nhịp Dài 2 Giây (2s Slow Push)", "pulse_2s", "Đẩy từ từ khung hình mỗi 2.0 giây"),
-            ("💥 Giật Nảy Đàn Hồi (Elastic Bounce)", "bounce", "Hiệu ứng nảy lò xo overshoot cực nảy ở đầu clip"),
-            ("🔍 Punch-In Zoom (Giật Phóng Nhanh)", "punch_zoom", "Giật phóng cận cảnh 1.35x rồi thu về 1.0x"),
-            ("🌊 Lắc Rung Nhẹ (Subtle Shake)", "shake", "Hiệu ứng rung cầm tay tự nhiên sống động")
+            ("Vào / Ra", "switch_in_out"), ("Nhịp 1 giây", "pulse_1s"),
+            ("Nhịp 2 giây", "pulse_2s"), ("Nảy đàn hồi", "bounce"),
+            ("Punch zoom", "punch_zoom"), ("Rung nhẹ", "shake"),
         ]
-
-        for title, preset_code, desc in presets:
-            card = tk.Frame(group_1click, bg=THEME["bg_card"], padx=10, pady=8, highlightbackground=THEME["border"], highlightthickness=1)
-            card.pack(fill="x", pady=3)
-
-            top = tk.Frame(card, bg=THEME["bg_card"])
-            top.pack(fill="x")
-            tk.Label(top, text=title, bg=THEME["bg_card"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold")).pack(side="left")
-
-            btn_apply = RoundedButton(
-                top,
-                text="Áp Dụng",
-                width=76,
-                height=26,
-                variant="primary",
-                command=lambda p=preset_code: self._apply_rhythm_preset(p)
-            )
-            btn_apply.pack(side="right")
-
-            tk.Label(card, text=desc, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), anchor="w").pack(fill="x", pady=(2, 0))
-
-        # Target Options
-        group_opt = tk.LabelFrame(inner, text="⚙️ PHẠM VI ÁP DỤNG", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
-        group_opt.pack(fill="x", pady=6)
-
-        row1 = tk.Frame(group_opt, bg=THEME["bg_panel"])
-        row1.pack(fill="x", pady=4)
-        tk.Label(row1, text="Áp dụng cho Track:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
-        self.rhythm_track_combo = ttk.Combobox(row1, state="readonly", width=20)
+        for idx, (title, code) in enumerate(presets):
+            tk.Radiobutton(
+                grid, text=title, variable=self.selected_rhythm, value=code, indicatoron=False,
+                bg=THEME["bg_card"], fg=THEME["text_sub"], selectcolor="#344f73",
+                activebackground=THEME["bg_card_hover"], activeforeground=THEME["text_main"],
+                relief="flat", overrelief="flat", borderwidth=0, highlightthickness=1,
+                highlightbackground=THEME["border"], highlightcolor=THEME["accent_cyan"],
+                font=(FONT_FAMILY, 11), padx=10, pady=16, cursor="hand2",
+            ).grid(row=idx // 2, column=idx % 2, sticky="ew", padx=4, pady=4)
+        form = StudioGroup(parent, text="PHẠM VI & THÔNG SỐ", bg=THEME["bg_panel"], padx=4, pady=12)
+        form.pack(fill="x", pady=(18, 0))
+        tk.Label(form, text="Track nhận hiệu ứng", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(anchor="w")
+        self.rhythm_track_combo = ttk.Combobox(form, state="readonly")
         self.rhythm_track_combo["values"] = ["Tất cả Video Track", "Chỉ Track 0 (Chính)", "Chỉ Track 1 (Overlay 1)"]
         self.rhythm_track_combo.current(0)
-        self.rhythm_track_combo.pack(side="left", padx=4)
-
-        row2 = tk.Frame(group_opt, bg=THEME["bg_panel"])
-        row2.pack(fill="x", pady=4)
-        tk.Label(row2, text="Đường cong Bezier:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
-        self.rhythm_curve_combo = ttk.Combobox(row2, state="readonly", width=20)
+        self.rhythm_track_combo.pack(fill="x", pady=(5, 12))
+        tk.Label(form, text="Đường cong chuyển động", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(anchor="w")
+        self.rhythm_curve_combo = ttk.Combobox(form, state="readonly")
         self.rhythm_curve_combo["values"] = ["FreeCurveInOut (Mượt)", "FreeCurveIn", "FreeCurveOut", "Line"]
         self.rhythm_curve_combo.current(0)
-        self.rhythm_curve_combo.pack(side="left", padx=4)
-
-        # Scale Spinboxes
-        row3 = tk.Frame(group_opt, bg=THEME["bg_panel"])
-        row3.pack(fill="x", pady=4)
-        tk.Label(row3, text="Scale Bắt đầu:", bg=THEME["bg_panel"], fg=THEME["text_muted"]).pack(side="left", padx=4)
-        self.spin_scale_start = ttk.Spinbox(row3, from_=0.5, to=3.0, increment=0.05, width=6)
+        self.rhythm_curve_combo.pack(fill="x", pady=(5, 12))
+        row = tk.Frame(form, bg=THEME["bg_panel"])
+        row.pack(fill="x", pady=4)
+        tk.Label(row, text="Scale đầu", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(side="left")
+        self.spin_scale_start = ttk.Spinbox(row, from_=0.5, to=3.0, increment=0.05, width=6)
         self.spin_scale_start.set(1.0)
-        self.spin_scale_start.pack(side="left", padx=4)
-
-        tk.Label(row3, text="Scale Đỉnh:", bg=THEME["bg_panel"], fg=THEME["text_muted"]).pack(side="left", padx=10)
-        self.spin_scale_peak = ttk.Spinbox(row3, from_=0.5, to=3.0, increment=0.05, width=6)
+        self.spin_scale_start.pack(side="left", padx=(8, 16))
+        tk.Label(row, text="Scale đỉnh", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(side="left")
+        self.spin_scale_peak = ttk.Spinbox(row, from_=0.5, to=3.0, increment=0.05, width=6)
         self.spin_scale_peak.set(1.25)
-        self.spin_scale_peak.pack(side="left", padx=4)
-
-        # Action Buttons
-        btn_box = tk.Frame(inner, bg=THEME["bg_panel"])
-        btn_box.pack(fill="x", pady=10)
-
-        btn_save = RoundedButton(
-            btn_box,
-            text="🚀 GHI KEYFRAME VÀO CAPCUT (TỰ ĐỘNG SAO LƯU)",
-            width=380,
-            height=38,
-            variant="primary",
-            command=lambda: self._apply_rhythm_preset("pulse_1s")
-        )
-        btn_save.pack(fill="x", pady=4)
-
-        btn_clear = RoundedButton(
-            btn_box,
-            text="🧼 Xóa Toàn Bộ Keyframe Trên Track Đã Chọn",
-            width=380,
-            height=32,
-            variant="danger",
-            command=self._clear_keyframes_on_track
-        )
-        btn_clear.pack(fill="x", pady=4)
+        self.spin_scale_peak.pack(side="left", padx=8)
+        RoundedButton(parent, text="Áp dụng chuyển động", height=42, variant="primary",
+                      command=lambda: self._apply_rhythm_preset(self.selected_rhythm.get())).pack(fill="x", pady=(16, 8))
+        tk.Label(parent, text="Tự động tạo bản sao lưu trước khi ghi.",
+                 bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9)).pack(anchor="w")
+        RoundedButton(parent, text="Xóa keyframe trên track đã chọn", height=34, variant="danger",
+                      command=self._clear_keyframes_on_track).pack(fill="x", pady=(12, 0))
 
     def _build_tab_speed(self, parent):
-        group_presets = tk.LabelFrame(parent, text="🏎️ CÁC MẪU UỐN TỐC ĐỘ (SPEED CURVE PRESETS)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
+        group_presets = StudioGroup(parent, text="🏎️ CÁC MẪU UỐN TỐC ĐỘ (SPEED CURVE PRESETS)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
         group_presets.pack(fill="x", pady=6)
 
         speed_presets = [
@@ -854,7 +798,7 @@ class CapCutStudioDesktopApp:
             tk.Label(card, text=desc, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9)).pack(anchor="w")
 
         # Curve Visualizer
-        group_viz = tk.LabelFrame(parent, text="📈 BIỂU ĐỒ ĐƯỜNG CONG TỐC ĐỘ", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
+        group_viz = StudioGroup(parent, text="📈 BIỂU ĐỒ ĐƯỜNG CONG TỐC ĐỘ", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
         group_viz.pack(fill="both", expand=True, pady=6)
 
         self.speed_canvas = tk.Canvas(group_viz, bg="#0d0e14", height=130, highlightthickness=0)
@@ -900,7 +844,7 @@ class CapCutStudioDesktopApp:
         )
         tk.Label(info_box, text=msg, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), justify="left").pack(anchor="w", pady=4)
 
-        group_opt = tk.LabelFrame(parent, text="⚙️ THÔNG SỐ CHỐNG RUNG", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
+        group_opt = StudioGroup(parent, text="⚙️ THÔNG SỐ CHỐNG RUNG", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
         group_opt.pack(fill="x", pady=6)
 
         row1 = tk.Frame(group_opt, bg=THEME["bg_panel"])
@@ -1073,7 +1017,7 @@ class CapCutStudioDesktopApp:
         self.scrubber.pack(side="top", fill="x", pady=2)
 
         # Active Layers Table Inspector (Bottom of right panel)
-        layer_box = tk.LabelFrame(self.right_panel, text="📑 DANH SÁCH LAYER TẠI FRAME HIỆN TẠI (CLICK [👁️] ĐỂ ẨN/HIỆN)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 9, "bold"), padx=6, pady=4)
+        layer_box = StudioGroup(self.right_panel, text="LAYER ĐANG HIỂN THỊ  ·  Nhấn cột Hiện để bật / tắt", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 9, "bold"), padx=6, pady=4)
         layer_box.pack(side="bottom", fill="x", pady=(4, 0))
 
         self.layer_tree = ttk.Treeview(
@@ -1091,11 +1035,14 @@ class CapCutStudioDesktopApp:
 
         self.layer_tree.column("visible", width=42, anchor="center")
         self.layer_tree.column("track", width=60, anchor="center")
-        self.layer_tree.column("name", width=180)
+        self.layer_tree.column("name", width=160, minwidth=100, stretch=True)
         self.layer_tree.column("scale", width=65, anchor="center")
         self.layer_tree.column("position", width=105, anchor="center")
-        self.layer_tree.column("status", width=130, anchor="center")
-        self.layer_tree.pack(fill="x", expand=True)
+        self.layer_tree.column("status", width=110, minwidth=90, anchor="center")
+        self.layer_tree.pack(side="left", fill="both", expand=True)
+        layer_scroll = ttk.Scrollbar(layer_box, orient="vertical", command=self.layer_tree.yview)
+        layer_scroll.pack(side="right", fill="y")
+        self.layer_tree.configure(yscrollcommand=layer_scroll.set)
         self.layer_tree.bind("<ButtonRelease-1>", self._on_layer_tree_click)
 
     # --------------------------------------------------------------------------
@@ -1110,13 +1057,19 @@ class CapCutStudioDesktopApp:
 
         tk.Label(
             tl_header,
-            text="🎞️ DÒNG THỜI GIAN ĐA TRACK (VISUAL TIMELINE) - ◆ KIM CƯƠNG KEYFRAME",
+            text="TIMELINE   /   Cuộn để xem tất cả track",
             bg=THEME["bg_header"],
             fg=THEME["accent_cyan"],
             font=(FONT_FAMILY, 9, "bold")
         ).pack(side="left")
 
-        self.timeline_canvas = tk.Canvas(timeline_frame, bg=THEME["timeline_bg"], height=128, highlightthickness=0)
+        timeline_body = tk.Frame(timeline_frame, bg=THEME["timeline_bg"])
+        timeline_body.pack(fill="both", expand=True)
+        self.timeline_canvas = tk.Canvas(timeline_body, bg=THEME["timeline_bg"], height=160, highlightthickness=0)
+        timeline_scroll = ttk.Scrollbar(timeline_body, orient="vertical", command=self.timeline_canvas.yview)
+        timeline_scroll.pack(side="right", fill="y")
+        self.timeline_canvas.configure(yscrollcommand=timeline_scroll.set)
+        self.timeline_canvas.bind("<MouseWheel>", lambda e: self.timeline_canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
         self.timeline_canvas.pack(side="top", fill="both", expand=True)
         self.timeline_canvas.bind("<Configure>", lambda e: self._draw_timeline())
         self.timeline_canvas.bind("<Button-1>", self._on_timeline_click)
@@ -1390,15 +1343,6 @@ class CapCutStudioDesktopApp:
         dur_str = f"{int(dur//60):02d}:{dur%60:06.3f}"
         self.lbl_timecode.config(text=f"{time_str} / {dur_str} (Frame {frame_idx} / {total_frames})")
 
-        # Bottom-right timecode pill inside viewport
-        tc_w = 75
-        tc_h = 18
-        self.preview_canvas.create_rectangle(vx1 - tc_w - 6, vy1 - tc_h - 6, vx1 - 6, vy1 - 6, fill="#0a0c10", outline="#222634")
-        self.preview_canvas.create_text(vx1 - 10, vy1 - 15, text=time_str, fill=THEME["accent_cyan"], font=("Menlo", 9, "bold"), anchor="e")
-
-        # Bottom-left layers active badge inside viewport
-        self.preview_canvas.create_text(vx0 + 10, vy1 - 15, text=f"{len(active_layers)} Layers", fill=THEME["text_muted"], font=(FONT_FAMILY, 8, "bold"), anchor="w")
-
     def _on_layer_tree_click(self, event):
         item = self.layer_tree.identify_row(event.y)
         col = self.layer_tree.identify_column(event.x)
@@ -1449,8 +1393,10 @@ class CapCutStudioDesktopApp:
 
         # Track rows
         tracks = self.current_project.get("tracks", [])
-        num_tracks = min(4, len(tracks))
-        track_row_h = (h - ruler_h) // max(1, num_tracks)
+        num_tracks = len(tracks)
+        track_row_h = 36
+        content_h = ruler_h + num_tracks * track_row_h
+        self.timeline_canvas.configure(scrollregion=(0, 0, w, max(h, content_h)))
 
         for i in range(num_tracks):
             track = tracks[i]
@@ -1489,13 +1435,18 @@ class CapCutStudioDesktopApp:
                     cname = cname[:12] + ".."
                 self.timeline_canvas.create_text(x0 + 4, (clip_y0 + clip_y1)//2, text=cname, fill="#ffffff", font=(FONT_FAMILY, 8), anchor="w")
 
-                # Keyframe Diamonds
+                # Coalesce nearby times across properties so markers stay readable.
+                diamond_columns = set()
                 for kf_group in seg.get("raw_common_keyframes", []):
                     for kf in kf_group.get("keyframe_list", []):
                         kf_offset_s = kf.get("time_offset", 0) / 1_000_000.0
                         kf_abs_s = st + kf_offset_s
                         kx = margin_left + (kf_abs_s / dur) * usable_w
-                        ky = (clip_y0 + clip_y1) // 2
+                        column = round(kx / 7)
+                        if column in diamond_columns:
+                            continue
+                        diamond_columns.add(column)
+                        ky = clip_y1 - 5
 
                         self.timeline_canvas.create_polygon(
                             kx, ky - 4,
@@ -1507,7 +1458,7 @@ class CapCutStudioDesktopApp:
 
         # Red Playhead Line
         playhead_x = margin_left + (self.current_time_sec / dur) * usable_w
-        self.timeline_canvas.create_line(playhead_x, 0, playhead_x, h, fill=THEME["accent_red"], width=2)
+        self.timeline_canvas.create_line(playhead_x, 0, playhead_x, max(h, content_h), fill=THEME["accent_red"], width=2)
         self.timeline_canvas.create_polygon(
             playhead_x - 5, 0,
             playhead_x + 5, 0,
@@ -1573,9 +1524,9 @@ class CapCutStudioDesktopApp:
                 elif preset_code == "pulse_2s":
                     new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=2.0, motion_type="bounce", bounce_scale=scale_peak)
                 elif preset_code == "bounce":
-                    new_kfs = KeyframeEngine.preset_bounce(du_us, bounce_scale=scale_peak, bounce_count=2)
+                    new_kfs = KeyframeEngine.preset_elastic_bounce(du_us, peak_scale=scale_peak, base_scale=float(self.spin_scale_start.get()))
                 elif preset_code == "punch_zoom":
-                    new_kfs = KeyframeEngine.preset_punch_zoom(du_us, peak_scale=scale_peak, punch_duration_ms=200)
+                    new_kfs = KeyframeEngine.preset_elastic_bounce(du_us, peak_scale=scale_peak, base_scale=float(self.spin_scale_start.get()), bounce_duration_ms=200)
                 elif preset_code == "shake":
                     new_kfs = KeyframeEngine.preset_camera_shake(du_us, intensity=0.03, frequency_hz=10)
 

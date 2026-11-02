@@ -28,6 +28,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: python -m compileall -q core desktop_app.py server.py run.py release_tools
       - run: node --check web/app.js
+      - run: python -m release_tools.regression
       - run: python -m release_tools.smoke_web
       - run: python release_tools/build_web.py
       - uses: actions/upload-artifact@v4
@@ -49,6 +50,8 @@ jobs:
           - os: windows-latest
             artifact: windows-x86_64
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -67,15 +70,22 @@ jobs:
               "dist/CapCut Keyframe Studio.app/Contents/MacOS/CapCut Keyframe Studio"
           )
           subprocess.run([executable, "--self-test"], check=True, timeout=90)
+      - name: Capture macOS native visual check
+        if: matrix.artifact == 'macos-arm64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m release_tools.visual_check
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
+            dist/*.png
             dist/*.dmg
             dist/*-Setup.exe
           if-no-files-found: error
 
   publish:
+    if: false
     needs: [validate, desktop]
     runs-on: ubuntu-latest
     permissions:
