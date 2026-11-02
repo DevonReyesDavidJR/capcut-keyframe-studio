@@ -13,43 +13,34 @@ jobs:
       - name: Verify tested source and completed build
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: be14e4168f496660d2f1b16ea307bc613ee08a6f
+          EXPECTED_SHA: 76ccb56fde423b2db48dbb89b8c6107392c4ba7b
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41385329250" > run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41386173060" > run.json
           python -c 'import json,os; r=json.load(open("run.json")); assert r["conclusion"]=="success" and r["head_sha"]==os.environ["EXPECTED_SHA"]'
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 41385329250
+          run-id: 41386173060
           path: release-assets
           merge-multiple: true
       - name: Prepare reviewed release notes
         shell: python
         run: |
           from pathlib import Path
-          Path("notes.md").write_text("""GitHub in-app updates (Preview 3):
-          - New Update action: release notes, preview channel, architecture selection, verified download and installation/relaunch.
-          - Install this release manually once; subsequent updates can be installed inside the app.
-          - Download errors or checksum mismatches do not replace the installed app.
-          - macOS stages the update, waits for exit, preserves a previous app bundle and rolls back on move/open failure.
-          - Windows uses a detached per-user installer helper and relaunches the app.
-          - Desktop-Update.png shows the actual macOS update dialog with a simulated future release.
-          - Passed ten updater tests, existing regression tests and native startup checks.
+          Path("notes.md").write_text("""Rounded native interface (Preview 4):
+          - Rounded editor panels, project/folder selectors, tool tabs, buttons, monitor and timeline.
+          - Antialiased surfaces, thin borders and consistent padding inspired by the Web interface.
+          - Custom pill tabs replace native etched notebook tabs; selected states remain visible.
+          - Existing motion controls, layer scrolling and GitHub updater are retained.
 
-          Native editor fixes included:
-          - Rebuilt button rendering, readable dark inputs, quieter colors and clear selected presets.
-          - Keep Apply visible on small displays. Reserve transport space and allow the layer inspector to collapse for a larger preview.
-          - Scroll through all tracks and layers; coalesce overlapping keyframe markers.
-          - Preserve static clip transforms and alpha. Apply uniform scale keyframes to both axes.
-          - Repair missing motion, speed and stabilizer engine calls; cover draft writes with regression checks.
-          - Desktop-Preview.png is an actual macOS screenshot using synthetic sample assets, not the user's project.
-
-          Install the DMG matching your Mac processor and replace the previous app in Applications.
-          Close the old app before opening the new one.
-          FFmpeg remains a separate prerequisite: brew install ffmpeg.
-          Preview macOS builds are not Developer-ID signed or notarized.
-          The Web ZIP runs locally; no public Web deployment is included.
+          On Preview 3, open Cap nhat > download > install and reopen to receive this version.
+          Older installations can install the matching DMG manually.
+          Desktop-Preview.png is a real macOS capture with synthetic sample assets.
+          Native startup and existing updater/media/action checks passed on the build runners.
+          FFmpeg remains a separate prerequisite. Preview macOS builds are not Developer-ID signed/notarized.
           """)
+      - name: Keep the reviewed editor snapshots
+        run: rm -f release-assets/Desktop-Update.png
       - name: Checksums
         working-directory: release-assets
         run: sha256sum *.dmg *.exe *.zip *.png > SHA256SUMS.txt
@@ -57,15 +48,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/compare/be14e4168f496660d2f1b16ea307bc613ee08a6f...$GITHUB_SHA" > comparison.json
+          gh api "repos/$GITHUB_REPOSITORY/compare/76ccb56fde423b2db48dbb89b8c6107392c4ba7b...$GITHUB_SHA" > comparison.json
           python -c 'import json; assert all(f["filename"] == ".github/workflows/publish-reviewed.yml" for f in json.load(open("comparison.json"))["files"])'
       - name: Publish reviewed artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v0.2.0-preview.3 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
+          if gh release view v0.2.0-preview.4 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
             python -c 'import json,os; assert json.load(open("existing.json"))["targetCommitish"] == os.environ["GITHUB_SHA"]'
             echo "The reviewed build is already published."
           else
-            gh release create v0.2.0-preview.3 release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
+            gh release create v0.2.0-preview.4 release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "CapCut Keyframe Studio — rounded native interface" --notes-file notes.md --prerelease
           fi
