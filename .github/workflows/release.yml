@@ -6,6 +6,10 @@ on:
       - ".github/workflows/release.yml"
       - "release_tools/**"
       - "run.py"
+      - "desktop_app.py"
+      - "desktop_update.py"
+      - "core/**"
+      - "web/**"
       - "requirements*.txt"
       - "RELEASE_GUIDE.md"
   workflow_dispatch:

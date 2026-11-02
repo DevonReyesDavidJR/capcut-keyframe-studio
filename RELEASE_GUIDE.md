@@ -45,3 +45,15 @@ Install `requirements-build.txt` and run `python release_tools/build.py` on Wind
 Windows builds require Inno Setup 6. macOS builds use hdiutil.
 Run `python release_tools/build_web.py` for the local Web archive.
 CI checks Python compilation, JavaScript syntax, API startup, media-frame proportions and desktop startup before publishing preview installers.
+
+## In-app updates (Preview 3 and later)
+Install Preview 3 manually once if your current app has no Update button.
+Open **Cập nhật** in the header, check the version and release notes, then choose **Tải bản cập nhật**.
+After the download is verified, choose **Cài và mở lại**. The app closes, installs and reopens.
+macOS keeps the replaced app in a hidden .previous-*.app bundle alongside the installation for rollback.
+Windows uses the per-user installer. Python/source runs offer a link to the release page instead of replacing source files.
+Network/download errors leave the installed app intact. Preview builds can opt into preview releases.
+
+For maintainers: bump core/version.py before building, then publish a matching vX.Y.Z or vX.Y.Z-preview.N tag.
+Keep platform asset names consistent and include SHA256SUMS.txt; releases missing the correct installer or checksum manifest are skipped.
+Use the reviewed native build artifacts for publication.
