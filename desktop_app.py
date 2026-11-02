@@ -42,6 +42,7 @@ from core.capcut_adapter import CapCutAdapter
 from core.keyframe_engine import KeyframeEngine
 from core.speed_ramp_engine import SpeedRampEngine
 from core.stabilizer_engine import StabilizerEngine
+from core.audio_analyzer import AudioAnalyzer
 
 # ==============================================================================
 # PROFESSIONAL CAPCUT DARK PALETTE
@@ -526,6 +527,8 @@ class CapCutStudioDesktopApp:
         self.play_timer_id = None
         self.selected_layer_id: Optional[str] = None
         self.layer_visibility: Dict[str, bool] = {}
+        # Clips picked on the timeline as (track_index, segment_index); empty = use track scope
+        self.selected_segments: set = set()
 
         # Viewport display buffer
         self.current_photo_image: Optional[ImageTk.PhotoImage] = None
@@ -1094,7 +1097,7 @@ class CapCutStudioDesktopApp:
 
         tk.Label(
             tl_header,
-            text="🎞️ DÒNG THỜI GIAN ĐA TRACK (VISUAL TIMELINE) - ◆ KIM CƯƠNG KEYFRAME",
+            text="🎞️ DÒNG THỜI GIAN ĐA TRACK - ◆ KEYFRAME  |  Click clip để chọn, Shift+Click chọn nhiều, click vùng trống để bỏ chọn",
             bg=THEME["bg_header"],
             fg=THEME["accent_cyan"],
             font=(FONT_FAMILY, 9, "bold")
@@ -1103,7 +1106,8 @@ class CapCutStudioDesktopApp:
         self.timeline_canvas = tk.Canvas(timeline_frame, bg=THEME["timeline_bg"], height=128, highlightthickness=0)
         self.timeline_canvas.pack(side="top", fill="both", expand=True)
         self.timeline_canvas.bind("<Configure>", lambda e: self._draw_timeline())
-        self.timeline_canvas.bind("<Button-1>", self._on_timeline_click)
+        self.timeline_canvas.bind("<Button-1>", self._on_timeline_press)
+        self.timeline_canvas.bind("<Shift-Button-1>", lambda e: self._on_timeline_press(e, additive=True))
         self.timeline_canvas.bind("<B1-Motion>", self._on_timeline_click)
 
     def _bind_keyboard_shortcuts(self):
@@ -1153,6 +1157,7 @@ class CapCutStudioDesktopApp:
             self._refresh_projects()
 
     def _on_project_selected(self, event=None):
+        self.selected_segments.clear()
         idx = self.proj_combo.current()
         if 0 <= idx < len(self.projects_list):
             self._load_project_by_index(idx)
@@ -1463,9 +1468,12 @@ class CapCutStudioDesktopApp:
                 if seg.get("file_path", "").lower().endswith((".png", ".jpg", ".jpeg")):
                     fill_col = THEME["clip_image"]
 
+                is_selected = (t_idx, seg.get("index")) in self.selected_segments
                 self.timeline_canvas.create_rectangle(
                     x0, clip_y0, x1, clip_y1,
-                    fill=fill_col, outline="#3b82f6", width=1
+                    fill=fill_col,
+                    outline=THEME["accent_yellow"] if is_selected else "#3b82f6",
+                    width=3 if is_selected else 1
                 )
 
                 cname = seg.get("name", "")
@@ -1499,6 +1507,86 @@ class CapCutStudioDesktopApp:
             fill=THEME["accent_red"]
         )
 
+    def _on_timeline_press(self, event, additive: bool = False):
+        """Selects the clip under the cursor (Shift = toggle multi-select), then seeks."""
+        hit = self._timeline_hit_test(event.x, event.y)
+        if hit is None:
+            if not additive:
+                self.selected_segments.clear()
+        elif additive:
+            self.selected_segments.symmetric_difference_update({hit})
+        else:
+            self.selected_segments = {hit}
+        self._on_timeline_click(event)
+
+    def _timeline_hit_test(self, x: int, y: int) -> Optional[Tuple[int, int]]:
+        """Returns (track_index, segment_index) of the clip at canvas point (x, y), mirroring _draw_timeline."""
+        if not self.current_project:
+            return None
+        w = self.timeline_canvas.winfo_width() or 800
+        h = self.timeline_canvas.winfo_height() or 128
+        dur = self.current_project.get("duration_seconds", 0.0)
+        tracks = self.current_project.get("tracks", [])
+        if dur <= 0 or not tracks:
+            return None
+        margin_left, margin_right, ruler_h = 60, 20, 22
+        usable_w = w - margin_left - margin_right
+        num_tracks = min(4, len(tracks))
+        track_row_h = (h - ruler_h) // max(1, num_tracks)
+        row = (y - ruler_h) // max(1, track_row_h)
+        if y < ruler_h or not (0 <= row < num_tracks):
+            return None
+        track = tracks[row]
+        t_sec = (x - margin_left) / float(usable_w) * dur
+        for seg in track.get("segments", []):
+            if seg.get("start_seconds", 0.0) <= t_sec <= seg.get("end_seconds", 0.0):
+                return (track.get("index", row), seg.get("index"))
+        return None
+
+    def _resolve_target_clips(self, data: Dict[str, Any], action_label: str) -> List[Tuple[int, int]]:
+        """
+        Clips an action applies to: the timeline selection if any, otherwise every video clip
+        in the chosen track scope after the user confirms. Returns [] when cancelled.
+        """
+        tracks = data.get("tracks", [])
+        if self.selected_segments:
+            picked = sorted(
+                (t, s) for t, s in self.selected_segments
+                if t < len(tracks) and tracks[t].get("type") == "video" and s < len(tracks[t].get("segments", []))
+            )
+            if not picked:
+                messagebox.showwarning("Chú ý", "Các clip đang chọn không phải clip video. Hãy chọn clip trên track video (V).")
+            return picked
+
+        target_choice = self.rhythm_track_combo.get()
+        targets = []
+        for t_idx, track in enumerate(tracks):
+            if track.get("type") != "video":
+                continue
+            if "Track 0" in target_choice and t_idx != 0:
+                continue
+            if "Track 1" in target_choice and t_idx != 1:
+                continue
+            targets.extend((t_idx, s_idx) for s_idx in range(len(track.get("segments", []))))
+
+        if not targets:
+            return []
+        if not messagebox.askyesno(
+            "Xác nhận phạm vi",
+            f"Chưa chọn clip nào trên timeline.\n"
+            f"Áp dụng '{action_label}' cho TẤT CẢ {len(targets)} clip video ({target_choice})?\n\n"
+            f"Mẹo: click vào clip trên timeline để chỉ áp dụng cho clip đó."
+        ):
+            return []
+        return targets
+
+    @staticmethod
+    def _merge_keyframe_groups(seg: Dict[str, Any], new_groups: List[Dict[str, Any]]) -> None:
+        """Replaces only the properties the preset animates; other existing keyframes are kept."""
+        new_props = {g.get("property_type") for g in new_groups}
+        kept = [g for g in (seg.get("common_keyframes") or []) if g.get("property_type") not in new_props]
+        seg["common_keyframes"] = kept + new_groups
+
     def _on_timeline_click(self, event):
         if not self.current_project:
             return
@@ -1531,41 +1619,41 @@ class CapCutStudioDesktopApp:
         with open(info_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        scale_peak = float(self.spin_scale_peak.get() or 1.25)
-        target_choice = self.rhythm_track_combo.get()
+        try:
+            scale_peak = float(self.spin_scale_peak.get() or 1.25)
+        except ValueError:
+            scale_peak = 1.25
+
+        targets = self._resolve_target_clips(data, preset_code)
+        if not targets:
+            return
+
+        tracks = data.get("tracks", [])
         applied_count = 0
-
-        for t_idx, track in enumerate(data.get("tracks", [])):
-            if track.get("type") != "video":
-                continue
-            if "Track 0" in target_choice and t_idx != 0:
-                continue
-            if "Track 1" in target_choice and t_idx != 1:
+        for order, (t_idx, s_idx) in enumerate(targets):
+            seg = tracks[t_idx]["segments"][s_idx]
+            du_us = seg.get("target_timerange", {}).get("duration", 0)
+            if du_us <= 0:
                 continue
 
-            for s_idx, seg in enumerate(track.get("segments", [])):
-                du_us = seg.get("target_timerange", {}).get("duration", 0)
-                if du_us <= 0:
-                    continue
+            new_kfs = []
+            if preset_code == "switch_in_out":
+                direction = "up" if order % 2 == 0 else "down"
+                new_kfs = KeyframeEngine.preset_rhythmic_switch_entrance(du_us, direction=direction, transition_duration_ms=220)
+            elif preset_code == "pulse_1s":
+                new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=1.0, motion_type="bounce", bounce_scale=scale_peak)
+            elif preset_code == "pulse_2s":
+                new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=2.0, motion_type="bounce", bounce_scale=scale_peak)
+            elif preset_code == "bounce":
+                new_kfs = KeyframeEngine.preset_elastic_bounce(du_us, peak_scale=scale_peak)
+            elif preset_code == "punch_zoom":
+                new_kfs = KeyframeEngine.preset_punch_zoom(du_us, peak_scale=scale_peak, punch_duration_ms=200)
+            elif preset_code == "shake":
+                new_kfs = KeyframeEngine.preset_camera_shake(du_us, intensity=0.03, frequency_hz=10)
 
-                new_kfs = []
-                if preset_code == "switch_in_out":
-                    direction = "up" if s_idx % 2 == 0 else "down"
-                    new_kfs = KeyframeEngine.preset_rhythmic_switch_entrance(du_us, direction=direction, transition_duration_ms=220)
-                elif preset_code == "pulse_1s":
-                    new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=1.0, motion_type="bounce", bounce_scale=scale_peak)
-                elif preset_code == "pulse_2s":
-                    new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=2.0, motion_type="bounce", bounce_scale=scale_peak)
-                elif preset_code == "bounce":
-                    new_kfs = KeyframeEngine.preset_bounce(du_us, bounce_scale=scale_peak, bounce_count=2)
-                elif preset_code == "punch_zoom":
-                    new_kfs = KeyframeEngine.preset_punch_zoom(du_us, peak_scale=scale_peak, punch_duration_ms=200)
-                elif preset_code == "shake":
-                    new_kfs = KeyframeEngine.preset_camera_shake(du_us, intensity=0.03, frequency_hz=10)
-
-                if new_kfs:
-                    seg["common_keyframes"] = new_kfs
-                    applied_count += 1
+            if new_kfs:
+                self._merge_keyframe_groups(seg, new_kfs)
+                applied_count += 1
 
         if applied_count > 0:
             self.adapter.save_project_data(folder, data)
@@ -1577,7 +1665,8 @@ class CapCutStudioDesktopApp:
     def _clear_keyframes_on_track(self):
         if not self.current_project or not self.current_project_folder:
             return
-        if not messagebox.askyesno("Xác nhận", "Bạn có chắc chắn muốn xóa tất cả keyframe trên track đã chọn?"):
+        scope_text = f"{len(self.selected_segments)} clip đang chọn" if self.selected_segments else "track đã chọn"
+        if not messagebox.askyesno("Xác nhận", f"Bạn có chắc chắn muốn xóa tất cả keyframe trên {scope_text}?"):
             return
 
         folder = self.current_project_folder
@@ -1590,11 +1679,14 @@ class CapCutStudioDesktopApp:
         for t_idx, track in enumerate(data.get("tracks", [])):
             if track.get("type") != "video":
                 continue
-            if "Track 0" in target_choice and t_idx != 0:
-                continue
-            if "Track 1" in target_choice and t_idx != 1:
-                continue
-            for seg in track.get("segments", []):
+            if not self.selected_segments:
+                if "Track 0" in target_choice and t_idx != 0:
+                    continue
+                if "Track 1" in target_choice and t_idx != 1:
+                    continue
+            for s_idx, seg in enumerate(track.get("segments", [])):
+                if self.selected_segments and (t_idx, s_idx) not in self.selected_segments:
+                    continue
                 if seg.get("common_keyframes"):
                     seg["common_keyframes"] = []
                     cleared += 1
@@ -1605,6 +1697,7 @@ class CapCutStudioDesktopApp:
 
     def _apply_speed_ramp(self, preset_code: str):
         if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
             return
         self._draw_speed_curve_preview(preset_code)
 
@@ -1613,62 +1706,80 @@ class CapCutStudioDesktopApp:
         with open(info_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        targets = self._resolve_target_clips(data, preset_code)
+        if not targets:
+            return
+
+        beats_us: List[int] = []
+        if preset_code == "beat_sync":
+            # 120 BPM grid = one beat every 0.5s across the whole project
+            beats_us = AudioAnalyzer.generate_bpm_beats(120.0, int(data.get("duration", 0)) or 60_000_000)
+
+        tracks = data.get("tracks", [])
         applied = 0
-        for track in data.get("tracks", []):
-            if track.get("type") != "video":
+        for t_idx, s_idx in targets:
+            track = tracks[t_idx]
+            seg = track["segments"][s_idx]
+            if preset_code == "hero_ramp":
+                speed_mat = SpeedRampEngine.preset_hero()
+            elif preset_code == "bullet_time":
+                speed_mat = SpeedRampEngine.preset_bullet_time()
+            elif preset_code == "flash_in_out":
+                speed_mat = SpeedRampEngine.preset_flash_in_out()
+            elif preset_code == "beat_sync":
+                speed_mat = SpeedRampEngine.generate_beat_speed_ramp(
+                    segment_start_us=seg.get("target_timerange", {}).get("start", 0),
+                    segment_source_duration_us=seg.get("source_timerange", {}).get("duration", 0) or seg.get("target_timerange", {}).get("duration", 0),
+                    beat_timestamps_us=beats_us
+                )
+            elif preset_code == "reset":
+                speed_mat = SpeedRampEngine.create_normal_speed_material()
+            else:
                 continue
-            for seg in track.get("segments", []):
-                du_us = seg.get("target_timerange", {}).get("duration", 0)
-                if preset_code == "hero_ramp":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_hero_ramp(du_us))
-                    applied += 1
-                elif preset_code == "bullet_time":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_bullet_time(du_us))
-                    applied += 1
-                elif preset_code == "flash_in_out":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_flash_in_out(du_us))
-                    applied += 1
-                elif preset_code == "reset":
-                    SpeedRampEngine.reset_segment_speed(seg)
-                    applied += 1
+            # Recomputes the clip length and ripples later clips so the track stays gap-free
+            SpeedRampEngine.apply_speed_material(data, track, s_idx, speed_mat)
+            applied += 1
 
         if applied > 0:
             self.adapter.save_project_data(folder, data)
             self._load_project_by_index(self.proj_combo.current())
-            messagebox.showinfo("Thành Công", f"Đã áp dụng uốn tốc độ '{preset_code}' vào {applied} clip!")
+            messagebox.showinfo("Thành Công", f"Đã áp dụng uốn tốc độ '{preset_code}' vào {applied} clip!\nCác clip phía sau đã được dời theo để timeline không bị hở/chồng.")
 
     def _execute_stabilizer(self):
         if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
             return
 
-        target_video = None
-        target_seg = None
+        # Use the selected clip when there is one, otherwise the first video clip
+        candidates = []
         for track in self.current_project.get("tracks", []):
             for seg in track.get("segments", []):
-                fp = seg.get("file_path", "")
-                if fp.lower().endswith((".mp4", ".mov", ".m4v")):
-                    target_video = fp
-                    target_seg = seg
-                    break
-            if target_video:
-                break
+                if seg.get("file_path", "").lower().endswith((".mp4", ".mov", ".m4v")):
+                    candidates.append((track.get("index"), seg))
+        if self.selected_segments:
+            candidates = [(t, s) for t, s in candidates if (t, s.get("index")) in self.selected_segments]
 
-        if not target_video:
-            messagebox.showinfo("Thông Báo", "Dự án hiện tại là đồ họa/ảnh PNG.\nTính năng chống rung khóa mốc áp dụng tốt nhất cho video quay thực tế.")
+        if not candidates:
+            messagebox.showinfo("Thông Báo", "Không tìm thấy clip video (.mp4/.mov) phù hợp.\nHãy click chọn 1 clip video trên timeline.")
             return
+        _, target_seg = candidates[0]
 
         try:
             mode = "dead_lock" if "Khóa Mốc" in self.stab_mode_combo.get() else "smooth"
             zoom_val = float(self.stab_zoom_combo.get().replace("x", ""))
 
-            engine = StabilizerEngine()
-            kfs = engine.stabilize_video_clip(
-                target_video,
-                target_seg.get("start_seconds", 0.0),
-                target_seg.get("duration_seconds", 0.0),
-                mode=mode,
-                auto_zoom=zoom_val
+            self.root.config(cursor="watch")
+            self.root.update_idletasks()
+            result = StabilizerEngine.track_and_stabilize(
+                video_path=target_seg.get("file_path"),
+                start_seconds=target_seg.get("source_start_seconds", 0.0),
+                duration_seconds=target_seg.get("source_duration_seconds") or target_seg.get("duration_seconds", 0.0),
+                stabilize_mode=mode,
+                min_zoom=zoom_val,
+                fps=int(self.current_project.get("fps", 30) or 30)
             )
+            if result.get("status") != "success":
+                raise RuntimeError(result.get("message", "Không rõ lỗi"))
 
             info_file = self.current_project.get("info_file")
             with open(info_file, "r", encoding="utf-8") as f:
@@ -1677,14 +1788,16 @@ class CapCutStudioDesktopApp:
             for track in data.get("tracks", []):
                 for s in track.get("segments", []):
                     if s.get("id") == target_seg.get("id"):
-                        s["common_keyframes"] = kfs
+                        self._merge_keyframe_groups(s, result["keyframes"])
                         break
 
             self.adapter.save_project_data(self.current_project_folder, data)
             self._load_project_by_index(self.proj_combo.current())
-            messagebox.showinfo("Thành Công", f"Đã tạo keyframe chống rung khóa mốc (Auto-Zoom {zoom_val}x)!")
+            messagebox.showinfo("Thành Công", f"Đã tạo keyframe chống rung cho '{target_seg.get('name')}' (Auto-Zoom {result.get('auto_zoom')}x)!")
         except Exception as e:
             messagebox.showerror("Lỗi Chống Rung", f"Không thể thực thi:\n{e}")
+        finally:
+            self.root.config(cursor="")
 
     def _analyze_video_rhythm(self):
         if not self.current_project:

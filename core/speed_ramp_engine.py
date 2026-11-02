@@ -165,6 +165,24 @@ class SpeedRampEngine:
         return cls.create_speed_material("Flash out", pts, preset_id="6768731653402530308")
 
     @classmethod
+    def preset_flash_in_out(
+        cls,
+        rush_speed: float = 4.0,
+        normal_speed: float = 1.0,
+        rush_ratio: float = 0.2
+    ) -> Dict[str, Any]:
+        """
+        Flash In / Out: Rushes in -> normal pace in the middle -> rushes out.
+        """
+        pts = [
+            {"x": 0.0, "y": rush_speed},
+            {"x": rush_ratio, "y": normal_speed},
+            {"x": 1.0 - rush_ratio, "y": normal_speed},
+            {"x": 1.0, "y": rush_speed}
+        ]
+        return cls.create_speed_material("Flash in out", pts)
+
+    @classmethod
     def preset_jump_cut(
         cls,
         fast_speed: float = 4.5,
@@ -257,3 +275,110 @@ class SpeedRampEngine:
 
         return cls.create_speed_material("Beat Ramp", clean_pts)
 
+    # ==========================================
+    # APPLYING SPEED TO A SEGMENT (WITH TIMELINE RIPPLE)
+    # ==========================================
+
+    @classmethod
+    def create_normal_speed_material(cls) -> Dict[str, Any]:
+        """Constant 1.0x speed material, as CapCut creates for an untouched clip."""
+        return {
+            "id": cls.generate_uuid(),
+            "type": "speed",
+            "mode": 0,
+            "speed": 1.0,
+            "curve_speed": None
+        }
+
+    @classmethod
+    def apply_speed_material(
+        cls,
+        data: Dict[str, Any],
+        track: Dict[str, Any],
+        segment_index: int,
+        speed_mat: Dict[str, Any]
+    ) -> int:
+        """
+        Attaches speed_mat to the segment, replacing its previous speed material, recomputes
+        the segment's target duration and ripples later clips on the same track so the
+        timeline stays gap-free and non-overlapping. Returns the duration change in us.
+        """
+        seg = track["segments"][segment_index]
+        speeds = data.setdefault("materials", {}).setdefault("speeds", [])
+        speed_ids = {s.get("id") for s in speeds}
+
+        refs = seg.get("extra_material_refs", []) or []
+        old_speed_refs = [r for r in refs if r in speed_ids]
+        seg["extra_material_refs"] = [r for r in refs if r not in speed_ids] + [speed_mat["id"]]
+        speeds.append(speed_mat)
+        cls._prune_unreferenced_speeds(data, old_speed_refs)
+
+        seg["speed"] = speed_mat["speed"]
+        target = seg.setdefault("target_timerange", {"start": 0, "duration": 0})
+        src_dur = (seg.get("source_timerange") or {}).get("duration") or target.get("duration", 0)
+        new_dur = max(1, int(round(src_dur / max(0.01, speed_mat["speed"]))))
+        return cls._resize_segment_with_ripple(data, track, segment_index, new_dur)
+
+    @classmethod
+    def reset_segment_speed(cls, data: Dict[str, Any], track: Dict[str, Any], segment_index: int) -> int:
+        """Puts the segment back on a constant 1.0x speed material (keeps a valid speed ref)."""
+        return cls.apply_speed_material(data, track, segment_index, cls.create_normal_speed_material())
+
+    @staticmethod
+    def _prune_unreferenced_speeds(data: Dict[str, Any], candidate_ids: List[str]) -> None:
+        """Removes speed materials from candidate_ids that no segment references anymore."""
+        if not candidate_ids:
+            return
+        still_used = set()
+        for trk in data.get("tracks", []):
+            for s in trk.get("segments", []):
+                still_used.update(s.get("extra_material_refs", []) or [])
+        drop = set(candidate_ids) - still_used
+        if drop:
+            materials = data.get("materials", {})
+            materials["speeds"] = [m for m in materials.get("speeds", []) if m.get("id") not in drop]
+
+    @staticmethod
+    def _resize_segment_with_ripple(
+        data: Dict[str, Any],
+        track: Dict[str, Any],
+        segment_index: int,
+        new_duration_us: int
+    ) -> int:
+        """
+        Sets a segment's target duration, rescales its keyframes to the new length,
+        shifts every later clip on the track by the same delta and updates the
+        project duration. Returns the delta in us.
+        """
+        segs = track.get("segments", [])
+        seg = segs[segment_index]
+        target = seg["target_timerange"]
+        old_start = target.get("start", 0)
+        old_dur = target.get("duration", 0)
+        old_end = old_start + old_dur
+        delta = new_duration_us - old_dur
+        target["duration"] = new_duration_us
+
+        # Keep the clip's own keyframes inside (and proportional to) its new length
+        if old_dur > 0:
+            ratio = new_duration_us / float(old_dur)
+            for group in seg.get("common_keyframes", []) or []:
+                for kf in group.get("keyframe_list", []):
+                    kf["time_offset"] = min(new_duration_us, int(round(kf.get("time_offset", 0) * ratio)))
+
+        if delta:
+            for i, other in enumerate(segs):
+                if i == segment_index:
+                    continue
+                o_range = other.get("target_timerange") or {}
+                if o_range.get("start", 0) >= old_end - 1000:  # 1ms tolerance for rounding
+                    o_range["start"] = max(0, o_range.get("start", 0) + delta)
+
+        project_end = 0
+        for trk in data.get("tracks", []):
+            for s in trk.get("segments", []):
+                r = s.get("target_timerange") or {}
+                project_end = max(project_end, r.get("start", 0) + r.get("duration", 0))
+        if project_end:
+            data["duration"] = project_end
+        return delta

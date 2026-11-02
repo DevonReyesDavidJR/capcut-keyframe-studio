@@ -942,22 +942,8 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 else:
                     speed_mat = SpeedRampEngine.preset_hero()
 
-                # Add speed object to materials.speeds
-                data["materials"]["speeds"].append(speed_mat)
-
-                # Update segment references and timing
-                seg["speed"] = speed_mat["speed"]
-                if "extra_material_refs" not in seg:
-                    seg["extra_material_refs"] = []
-                # Remove existing speed refs from extra_material_refs
-                existing_speed_ids = {s.get("id") for s in data["materials"]["speeds"]}
-                seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in existing_speed_ids]
-                seg["extra_material_refs"].append(speed_mat["id"])
-
-                # Update target duration: target_duration = int(source_duration / effective_speed)
-                new_target_dur = int(src_dur / speed_mat["speed"])
-                if "target_timerange" in seg:
-                    seg["target_timerange"]["duration"] = new_target_dur
+                # Attach speed material, recompute duration and ripple later clips on the track
+                SpeedRampEngine.apply_speed_material(data, track, s_idx, speed_mat)
 
                 modified_count += 1
 
@@ -991,17 +977,10 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 if t_idx is None or s_idx is None or t_idx >= len(tracks):
                     continue
 
-                seg = tracks[t_idx]["segments"][s_idx]
-                src_dur = seg.get("source_timerange", {}).get("duration", 3_000_000)
-
-                seg["speed"] = 1.0
-                if "target_timerange" in seg:
-                    seg["target_timerange"]["duration"] = src_dur
-
-                # Remove speed references
-                all_speeds = {s.get("id") for s in data.get("materials", {}).get("speeds", [])}
-                if "extra_material_refs" in seg:
-                    seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in all_speeds]
+                track = tracks[t_idx]
+                if s_idx >= len(track.get("segments", [])):
+                    continue
+                SpeedRampEngine.reset_segment_speed(data, track, s_idx)
 
                 modified_count += 1
 

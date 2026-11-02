@@ -13,8 +13,22 @@ Usage:
 import os
 import sys
 
+def has_desktop_dependencies() -> bool:
+    """Desktop mode needs Tkinter and Pillow; web mode needs neither."""
+    try:
+        import tkinter  # noqa: F401
+        from PIL import Image, ImageTk  # noqa: F401
+        return True
+    except ImportError as e:
+        print("=======================================================")
+        print(f"⚠️  Thiếu thư viện cho chế độ Desktop: {e}")
+        print("👉 Cài đặt bằng lệnh:  python3 -m pip install -r requirements.txt")
+        print("🌐 Tạm thời chuyển sang chế độ Web...")
+        print("=======================================================")
+        return False
+
 def main():
-    if "--web" in sys.argv:
+    if "--web" in sys.argv or not has_desktop_dependencies():
         import time
         import webbrowser
         import threading

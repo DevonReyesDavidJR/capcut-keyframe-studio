@@ -1,8 +1,11 @@
 # CapCut Keyframe Studio Pro
-# 100% pure standard library compatible out of the box!
-# No mandatory pip packages required.
+# Web mode (python3 run.py --web) runs on the Python standard library alone.
+# Desktop mode (default) needs Pillow for the preview compositor:
+Pillow>=9.0.0
+
+# External tool (not pip): FFmpeg must be on PATH for thumbnails, stabilizer,
+# filmstrip export and beat detection from non-WAV audio.
 
 # Optional performance & audio dependencies:
 # numpy>=1.22.0
 # scipy>=1.9.0
-

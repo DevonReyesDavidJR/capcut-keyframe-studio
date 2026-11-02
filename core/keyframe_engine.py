@@ -435,6 +435,32 @@ class KeyframeEngine:
         return [cls.create_property_group("KFTypeScaleX", kfs)]
 
     @classmethod
+    def preset_punch_zoom(
+        cls,
+        duration_us: int,
+        peak_scale: float = 1.35,
+        base_scale: float = 1.0,
+        punch_duration_ms: int = 200
+    ) -> List[Dict[str, Any]]:
+        """
+        Punch-in zoom: snaps quickly to peak_scale, then eases back to base_scale.
+        """
+        punch_us = min(duration_us, punch_duration_ms * 1000)
+        attack_us = max(1, int(punch_us * 0.35))
+        kfs = [
+            cls.create_single_keyframe(0, base_scale, curve_type="FreeCurveInOut",
+                                       right_control={"x": float(attack_us * 0.3), "y": 0.0}),
+            cls.create_single_keyframe(attack_us, peak_scale, curve_type="FreeCurveInOut",
+                                       right_control={"x": float((punch_us - attack_us) * 0.4), "y": 0.0}),
+        ]
+        if punch_us > attack_us:
+            kfs.append(cls.create_single_keyframe(punch_us, base_scale, curve_type="FreeCurveInOut"))
+        if punch_us < duration_us:
+            kfs.append(cls.create_single_keyframe(duration_us, base_scale, curve_type="Line"))
+
+        return [cls.create_property_group("KFTypeScaleX", kfs)]
+
+    @classmethod
     def preset_whip_pan(
         cls,
         duration_us: int,

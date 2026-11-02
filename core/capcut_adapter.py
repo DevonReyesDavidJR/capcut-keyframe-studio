@@ -247,7 +247,8 @@ class CapCutAdapter:
         backup_files = glob.glob(os.path.join(project_path, "draft_info.json.bak*"))
         backup_files += glob.glob(os.path.join(project_path, "draft_content.json.bak*"))
         backups = []
-        for bf in sorted(backup_files, reverse=True):
+        # Newest first by modification time (filenames carry labels, so name order is wrong)
+        for bf in sorted(backup_files, key=os.path.getmtime, reverse=True):
             b_stat = os.stat(bf)
             backups.append({
                 "filename": os.path.basename(bf),
@@ -283,9 +284,14 @@ class CapCutAdapter:
         if not os.path.exists(info_file):
             raise FileNotFoundError(f"Project JSON not found in {project_path}")
 
-        timestamp = int(time.time())
-        backup_name = f"{os.path.basename(info_file)}.bak-{label}-{timestamp}"
-        backup_path = os.path.join(project_path, backup_name)
+        # Millisecond timestamp plus a counter so rapid successive saves never overwrite an older backup
+        timestamp = int(time.time() * 1000)
+        base_name = f"{os.path.basename(info_file)}.bak-{label}-{timestamp}"
+        backup_path = os.path.join(project_path, base_name)
+        counter = 1
+        while os.path.exists(backup_path):
+            backup_path = os.path.join(project_path, f"{base_name}-{counter}")
+            counter += 1
         shutil.copy2(info_file, backup_path)
         return backup_path
 
@@ -295,6 +301,9 @@ class CapCutAdapter:
         target_file = os.path.join(project_path, "draft_info.json")
         if not os.path.exists(target_file):
             target_file = os.path.join(project_path, "draft_content.json")
+
+        if os.path.basename(backup_filename) != backup_filename or ".bak" not in backup_filename:
+            raise ValueError(f"Invalid backup filename: {backup_filename}")
 
         backup_path = os.path.join(project_path, backup_filename)
         if not os.path.exists(backup_path):
