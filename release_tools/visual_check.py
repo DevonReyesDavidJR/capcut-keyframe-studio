@@ -81,6 +81,27 @@ def capture():
     assert app.timeline_canvas.yview()[0] > 0, "All 20 tracks must be reachable"
     app.layer_tree.yview_moveto(1)
     assert app.layer_tree.yview()[0] > 0, "All layers must be reachable"
+    from core import updater
+    import sys
+    sys.frozen = True
+    updater.find_update = lambda **kwargs: {
+        "version": "0.2.0-preview.4",
+        "notes": "Bản cập nhật mới\n\n• Cải thiện trình xem video\n• Sửa lỗi và tối ưu hiệu năng",
+        "url": "https://github.com/DevonReyesDavidJR/capcut-keyframe-studio/releases",
+    }
+    app._show_updates()
+    root.after(700, capture_update)
+
+def capture_update():
+    shot = ImageGrab.grab()
+    shot.save(output / "Desktop-Update.png")
+    payload = {"content": base64.b64encode((output / "Desktop-Update.png").read_bytes()).decode(), "encoding": "utf-8"}
+    result = subprocess.run(
+        ["gh", "api", "repos/" + os.environ["GITHUB_REPOSITORY"] + "/git/blobs", "--input", "-"],
+        input=json.dumps(payload), text=True, capture_output=True, check=True,
+    )
+    print("UPDATE_VISUAL_BLOB_SHA=" + json.loads(result.stdout)["sha"], flush=True)
+    assert app._update_dialog.action.cget("text") == "Tải bản cập nhật"
     root.destroy()
 root.after(1800, capture)
 root.mainloop()

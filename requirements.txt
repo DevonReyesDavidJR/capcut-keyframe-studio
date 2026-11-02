@@ -1,4 +1,5 @@
 # Runtime dependencies
 Pillow>=10.4,<12
+certifi>=2024.8.30
 
-# FFmpeg must be installed separately and available on PATH for video/audio tools.
+# Install FFmpeg separately for video/audio processing.

@@ -16,6 +16,7 @@ args = [
     "--hidden-import", "desktop_app",
     "--hidden-import", "server",
     "--collect-all", "PIL",
+    "--collect-data", "certifi",
 ]
 if sys.platform == "darwin":
     args += ["--icon", "AppIcon.icns", "--osx-bundle-identifier", "com.capcut.keyframestudio"]

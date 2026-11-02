@@ -39,6 +39,8 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from core.capcut_adapter import CapCutAdapter
+from core.version import APP_VERSION
+from desktop_update import UpdateDialog
 from core.keyframe_engine import KeyframeEngine
 from core.speed_ramp_engine import SpeedRampEngine
 from core.stabilizer_engine import StabilizerEngine
@@ -521,7 +523,7 @@ class PILMediaCompositor:
 class CapCutStudioDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("🎬 CapCut Keyframe Studio Pro - Desktop Edition")
+        self.root.title("Keyframe Studio " + APP_VERSION)
         self.root.geometry(f"{min(1440, self.root.winfo_screenwidth())}x{min(940, self.root.winfo_screenheight() - 80)}")
         self.root.minsize(1000, 680)
         self.root.configure(bg=THEME["bg_app"])
@@ -630,6 +632,13 @@ class CapCutStudioDesktopApp:
     # --------------------------------------------------------------------------
     # HEADER BAR
     # --------------------------------------------------------------------------
+    def _show_updates(self):
+        dialog = getattr(self, "_update_dialog", None)
+        if dialog is not None and dialog.winfo_exists():
+            dialog.lift()
+            return
+        self._update_dialog = UpdateDialog(self.root, THEME, FONT_FAMILY)
+
     def _build_header_bar(self):
         header = tk.Frame(self.root, bg=THEME["bg_header"], padx=20, pady=14)
         header.pack(side="top", fill="x")
@@ -639,6 +648,8 @@ class CapCutStudioDesktopApp:
                  font=(FONT_FAMILY, 10)).pack(side="left")
         self.meta_frame = tk.Frame(header, bg=THEME["bg_header"])
         self.meta_frame.pack(side="right")
+        RoundedButton(self.meta_frame, text="Cập nhật", width=92, height=32,
+                      command=self._show_updates).pack(side="right", padx=(8, 0))
         self.lbl_duration = tk.Label(self.meta_frame, text="0.00s", bg=THEME["bg_header"],
                                      fg=THEME["text_sub"], padx=10)
         self.lbl_duration.pack(side="left")
