@@ -5,6 +5,7 @@ on:
     paths: [".github/workflows/publish-reviewed.yml"]
 permissions:
   contents: write
+  actions: read
 jobs:
   publish-reviewed:
     runs-on: ubuntu-latest
