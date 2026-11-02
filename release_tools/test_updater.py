@@ -93,5 +93,56 @@ class UpdaterTests(unittest.TestCase):
                 self.assertIn("-ParentPid", args)
                 self.assertTrue((Path(directory) / "install.ps1").exists())
 
+
+    def test_mac_helper_replaces_atomically_and_rolls_back(self):
+        for open_success, stage_exists in ((True, True), (False, True), (True, False)):
+            with tempfile.TemporaryDirectory(prefix="update test ") as directory:
+                root = Path(directory)
+                target, staged, backup = root / "Studio app.app", root / "staged.app", root / "backup.app"
+                target.mkdir()
+                (target / "version").write_text("old")
+                if stage_exists:
+                    staged.mkdir()
+                    (staged / "version").write_text("new")
+                script = updater.MAC_HELPER.replace('/usr/bin/open "$target"', '/usr/bin/true' if open_success else '/usr/bin/false')
+                script = script.replace('/usr/bin/osascript -e', ':')
+                helper = root / "install.sh"
+                helper.write_text(script)
+                result = subprocess.run(["sh", str(helper), "99999999", str(target), str(staged), str(backup)], capture_output=True, timeout=10)
+                if open_success and stage_exists:
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual((target / "version").read_text(), "new")
+                    self.assertEqual((backup / "version").read_text(), "old")
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual((target / "version").read_text(), "old")
+
+    def test_mac_preparation_checks_identity_before_handoff(self):
+        import plistlib
+        for valid in (True, False):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = root / "Installed app.app"
+                target.mkdir()
+                (target / "old").touch()
+                installer = root / "update.dmg"
+                installer.touch()
+                def run(args, **kwargs):
+                    if args[0] == "hdiutil" and args[1] == "attach":
+                        source = root / "mounted" / "CapCut Keyframe Studio.app" / "Contents"
+                        source.mkdir(parents=True)
+                        with (source / "Info.plist").open("wb") as stream:
+                            plistlib.dump({"CFBundleIdentifier": "com.capcut.keyframestudio" if valid else "wrong.app"}, stream)
+                    if args[0] == "ditto":
+                        shutil.copytree(args[1], args[2])
+                with patch.object(updater.sys, "frozen", True, create=True), patch.object(updater.sys, "platform", "darwin"), patch.object(updater, "mac_app_path", return_value=target), patch.object(updater.subprocess, "run", side_effect=run), patch.object(updater.subprocess, "Popen") as launch:
+                    if valid:
+                        updater.launch_installer(installer)
+                        self.assertEqual(launch.call_args.args[0][0], "/bin/sh")
+                    else:
+                        with self.assertRaises(ValueError): updater.launch_installer(installer)
+                        launch.assert_not_called()
+                self.assertTrue((target / "old").exists())
+
 if __name__ == "__main__":
     unittest.main()
