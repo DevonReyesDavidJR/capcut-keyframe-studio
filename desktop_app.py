@@ -125,7 +125,15 @@ class RoundedButton(tk.Canvas):
         self.command = command
         self.variant = variant
         self.is_hovered = False
+        self._apply_variant_colors(variant)
 
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+        self._draw()
+
+    def _apply_variant_colors(self, variant: str):
         if variant == "primary":
             self.bg_color = THEME["accent_cyan"]
             self.hover_color = "#38ef7d"
@@ -138,23 +146,15 @@ class RoundedButton(tk.Canvas):
             self.bg_color = "#1e293b"
             self.hover_color = THEME["accent_blue"]
             self.text_color = "#ffffff"
-
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", self._on_click)
-
-        self._draw()
+        elif variant == "warning":
+            self.bg_color = THEME["accent_yellow"]
+            self.text_color = "#000000"
 
     def set_text(self, text: str, variant: Optional[str] = None):
         self.btn_text = text
         if variant:
             self.variant = variant
-            if variant == "primary":
-                self.bg_color = THEME["accent_cyan"]
-                self.text_color = "#000000"
-            elif variant == "warning":
-                self.bg_color = THEME["accent_yellow"]
-                self.text_color = "#000000"
+            self._apply_variant_colors(variant)
         self._draw()
 
     def _draw(self):
@@ -529,6 +529,10 @@ class CapCutStudioDesktopApp:
         self.layer_visibility: Dict[str, bool] = {}
         # Clips picked on the timeline as (track_index, segment_index); empty = use track scope
         self.selected_segments: set = set()
+        # Hand-drawn motion path: raw stroke as (x, y, t) in CapCut position units
+        self.path_draw_mode: bool = False
+        self.path_points: List[Tuple[float, float, float]] = []
+        self.vp_rect: Tuple[int, int, int, int] = (0, 0, 1, 1)  # x0, y0, w, h of the phone screen on preview_canvas
 
         # Viewport display buffer
         self.current_photo_image: Optional[ImageTk.PhotoImage] = None
@@ -689,6 +693,11 @@ class CapCutStudioDesktopApp:
         self.notebook.add(tab_rhythm, text="⚡ Nhịp Chuyển Động")
         self._build_tab_rhythm(tab_rhythm)
 
+        # Tab 1b: Hand-drawn motion path
+        tab_path = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(tab_path, text="✏️ Vẽ Đường Đi")
+        self._build_tab_motion_path(tab_path)
+
         # Tab 2: Speed Ramping Master
         tab_speed = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(tab_speed, text="🏎️ Speed Ramp")
@@ -808,6 +817,202 @@ class CapCutStudioDesktopApp:
             command=self._clear_keyframes_on_track
         )
         btn_clear.pack(fill="x", pady=4)
+
+    def _build_tab_motion_path(self, parent):
+        info_box = tk.Frame(parent, bg=THEME["bg_card"], padx=12, pady=10, highlightbackground=THEME["border"], highlightthickness=1)
+        info_box.pack(fill="x", pady=6)
+        tk.Label(info_box, text="✏️ VẼ ĐƯỜNG ĐI CHO SHOT (MOTION PATH)", bg=THEME["bg_card"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold")).pack(anchor="w")
+        steps = (
+            "1. Click chọn clip trên timeline (Shift+Click để chọn nhiều).\n"
+            "2. Bấm 'Bắt Đầu Vẽ' rồi giữ chuột kéo trên màn hình preview\n"
+            "    để vẽ đường đi của tâm clip (từ điểm đầu đến điểm cuối).\n"
+            "3. Kéo thanh 'Độ mượt' - đường xanh là đường sẽ được dùng.\n"
+            "4. Bấm 'Áp Dụng'. Keyframe Vị trí X/Y được tạo tự động."
+        )
+        tk.Label(info_box, text=steps, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), justify="left").pack(anchor="w", pady=4)
+
+        group_opt = tk.LabelFrame(parent, text="⚙️ TÙY CHỈNH", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
+        group_opt.pack(fill="x", pady=6)
+
+        row1 = tk.Frame(group_opt, bg=THEME["bg_panel"])
+        row1.pack(fill="x", pady=4)
+        tk.Label(row1, text="Độ mượt:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
+        self.path_smooth_scale = tk.Scale(
+            row1, from_=0, to=100, orient="horizontal", length=220, showvalue=True,
+            bg=THEME["bg_panel"], fg=THEME["text_main"], highlightthickness=0, troughcolor=THEME["bg_card"],
+            command=lambda v: self._draw_path_overlay()
+        )
+        self.path_smooth_scale.set(50)
+        self.path_smooth_scale.pack(side="left", padx=4)
+
+        row2 = tk.Frame(group_opt, bg=THEME["bg_panel"])
+        row2.pack(fill="x", pady=4)
+        tk.Label(row2, text="Nhịp chạy:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
+        self.path_timing_combo = ttk.Combobox(row2, state="readonly", width=30)
+        self.path_timing_combo["values"] = [
+            "Mượt đầu & cuối (Ease In-Out)",
+            "Tốc độ đều suốt đường",
+            "Theo tốc độ vẽ tay"
+        ]
+        self.path_timing_combo.current(0)
+        self.path_timing_combo.pack(side="left", padx=4)
+
+        self.lbl_path_status = tk.Label(group_opt, text="Chưa có nét vẽ.", bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), anchor="w")
+        self.lbl_path_status.pack(fill="x", pady=(6, 0))
+
+        btn_box = tk.Frame(parent, bg=THEME["bg_panel"])
+        btn_box.pack(fill="x", pady=8)
+        self.btn_path_draw = RoundedButton(btn_box, text="✏️ Bắt Đầu Vẽ", width=150, height=34, variant="action", command=self._toggle_path_draw_mode)
+        self.btn_path_draw.pack(side="left", padx=4)
+        RoundedButton(btn_box, text="🗑️ Xóa Nét Vẽ", width=130, height=34, command=self._clear_motion_path).pack(side="left", padx=4)
+
+        RoundedButton(
+            parent,
+            text="🚀 ÁP DỤNG ĐƯỜNG ĐI CHO CLIP ĐÃ CHỌN (TỰ ĐỘNG SAO LƯU)",
+            width=380,
+            height=38,
+            variant="primary",
+            command=self._apply_motion_path
+        ).pack(fill="x", pady=4)
+
+    def _toggle_path_draw_mode(self):
+        self.path_draw_mode = not self.path_draw_mode
+        if self.path_draw_mode:
+            if self.is_playing:
+                self._toggle_playback()
+            self.btn_path_draw.set_text("⏹️ Dừng Vẽ", "danger")
+            self.preview_canvas.config(cursor="pencil")
+            self.lbl_path_status.config(text="Đang ở chế độ vẽ: giữ chuột và kéo trên màn hình preview.")
+        else:
+            self.btn_path_draw.set_text("✏️ Bắt Đầu Vẽ", "action")
+            self.preview_canvas.config(cursor="")
+            self._update_path_status()
+
+    def _canvas_to_capcut(self, px: float, py: float) -> Tuple[float, float]:
+        """Preview canvas pixel -> CapCut position units (0 = center, +-1 = screen edge, +y = up)."""
+        vx0, vy0, vw, vh = self.vp_rect
+        return ((px - vx0 - vw / 2.0) / (vw / 2.0), -(py - vy0 - vh / 2.0) / (vh / 2.0))
+
+    def _capcut_to_canvas(self, x: float, y: float) -> Tuple[float, float]:
+        vx0, vy0, vw, vh = self.vp_rect
+        return (vx0 + vw / 2.0 + x * vw / 2.0, vy0 + vh / 2.0 - y * vh / 2.0)
+
+    def _on_path_press(self, event):
+        if not self.path_draw_mode:
+            return
+        x, y = self._canvas_to_capcut(event.x, event.y)
+        self.path_points = [(x, y, time.monotonic())]
+        self._draw_path_overlay()
+
+    def _on_path_drag(self, event):
+        if not self.path_draw_mode or not self.path_points:
+            return
+        x, y = self._canvas_to_capcut(event.x, event.y)
+        self.path_points.append((x, y, time.monotonic()))
+        lx, ly = self._capcut_to_canvas(*self.path_points[-2][:2])
+        # Draw the live stroke incrementally; the full overlay is redrawn on release
+        self.preview_canvas.create_line(lx, ly, event.x, event.y, fill="#9ca3af", width=2, tags="path_overlay")
+
+    def _on_path_release(self, event):
+        if not self.path_draw_mode:
+            return
+        self._draw_path_overlay()
+        self._update_path_status()
+
+    def _clear_motion_path(self):
+        self.path_points = []
+        self._draw_path_overlay()
+        self._update_path_status()
+
+    def _path_aspect(self) -> float:
+        if not self.current_project:
+            return 9 / 16.0
+        return (self.current_project.get("canvas_width") or 1080) / float(self.current_project.get("canvas_height") or 1920)
+
+    def _draw_path_overlay(self):
+        """Raw stroke in grey, the smoothed path that will be applied in cyan, start/end markers."""
+        if not hasattr(self, "preview_canvas"):
+            return
+        self.preview_canvas.delete("path_overlay")
+        if len(self.path_points) < 2:
+            return
+        raw = [c for p in self.path_points for c in self._capcut_to_canvas(p[0], p[1])]
+        self.preview_canvas.create_line(*raw, fill="#6b7280", width=1, dash=(3, 3), tags="path_overlay")
+
+        smooth = KeyframeEngine.smooth_motion_path(self.path_points, self.path_smooth_scale.get() / 100.0, self._path_aspect())
+        if len(smooth) >= 2:
+            flat = [c for p in smooth for c in self._capcut_to_canvas(p[0], p[1])]
+            self.preview_canvas.create_line(*flat, fill=THEME["accent_cyan"], width=3, smooth=True, tags="path_overlay")
+            ex, ey = flat[-2], flat[-1]
+            sx, sy = flat[0], flat[1]
+            self.preview_canvas.create_oval(sx - 6, sy - 6, sx + 6, sy + 6, fill=THEME["accent_green"], outline="#000", tags="path_overlay")
+            self.preview_canvas.create_oval(ex - 6, ey - 6, ex + 6, ey + 6, fill=THEME["accent_red"], outline="#000", tags="path_overlay")
+
+    def _update_path_status(self):
+        if len(self.path_points) < 2:
+            self.lbl_path_status.config(text="Chưa có nét vẽ.")
+            return
+        sx, sy = self.path_points[0][:2]
+        ex, ey = self.path_points[-1][:2]
+        self.lbl_path_status.config(
+            text=f"Nét vẽ: {len(self.path_points)} điểm  |  🟢 ({sx:+.2f}, {sy:+.2f})  →  🔴 ({ex:+.2f}, {ey:+.2f})"
+        )
+
+    def _apply_motion_path(self):
+        if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
+            return
+        if len(self.path_points) < 2:
+            messagebox.showwarning("Chú ý", "Chưa có nét vẽ. Bấm 'Bắt Đầu Vẽ' rồi kéo chuột trên màn hình preview.")
+            return
+
+        info_file = self.current_project.get("info_file")
+        with open(info_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        targets = self._resolve_target_clips(data, "Vẽ đường đi")
+        if not targets:
+            return
+
+        timing = {0: "ease", 1: "constant", 2: "drawn"}.get(self.path_timing_combo.current(), "ease")
+        fps = int(data.get("fps", 30) or 30)
+        tracks = data.get("tracks", [])
+        applied, kf_count = 0, 0
+        try:
+            for t_idx, s_idx in targets:
+                seg = tracks[t_idx]["segments"][s_idx]
+                du_us = seg.get("target_timerange", {}).get("duration", 0)
+                if du_us <= 0:
+                    continue
+                groups = KeyframeEngine.generate_motion_path_keyframes(
+                    self.path_points, du_us, fps=fps,
+                    smoothing=self.path_smooth_scale.get() / 100.0,
+                    timing=timing, aspect=self._path_aspect()
+                )
+                self._merge_keyframe_groups(seg, groups)
+                applied += 1
+                kf_count = len(groups[0]["keyframe_list"])
+        except ValueError as e:
+            messagebox.showwarning("Chú ý", str(e))
+            return
+
+        if applied == 0:
+            return
+        self.adapter.save_project_data(self.current_project_folder, data)
+        if self.path_draw_mode:
+            self._toggle_path_draw_mode()
+        self._load_project_by_index(self.proj_combo.current())
+        # Jump to the start of the first target clip so Space plays the new motion right away
+        first = self.current_project["tracks"][targets[0][0]]["segments"][targets[0][1]]
+        self.current_time_sec = first.get("start_seconds", 0.0)
+        self.scrubber.set_time(self.current_time_sec)
+        self._render_current_frame()
+        self._draw_timeline()
+        messagebox.showinfo(
+            "Thành Công",
+            f"Đã tạo {kf_count} keyframe vị trí theo đường vẽ cho {applied} clip!\n"
+            f"Bấm Space để xem thử. Bản sao lưu đã được tự động lưu."
+        )
 
     def _build_tab_speed(self, parent):
         group_presets = tk.LabelFrame(parent, text="🏎️ CÁC MẪU UỐN TỐC ĐỘ (SPEED CURVE PRESETS)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
@@ -1019,6 +1224,9 @@ class CapCutStudioDesktopApp:
         )
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", lambda e: self._render_current_frame())
+        self.preview_canvas.bind("<ButtonPress-1>", self._on_path_press)
+        self.preview_canvas.bind("<B1-Motion>", self._on_path_drag)
+        self.preview_canvas.bind("<ButtonRelease-1>", self._on_path_release)
 
         # Transport Controls Bar
         ctrl_bar = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=4)
@@ -1323,6 +1531,7 @@ class CapCutStudioDesktopApp:
         vy0 = (ch - vp_h) // 2
         vx1 = vx0 + vp_w
         vy1 = vy0 + vp_h
+        self.vp_rect = (vx0, vy0, vp_w, vp_h)
 
         # Collect active layers at current time
         t_sec = self.current_time_sec
@@ -1387,6 +1596,8 @@ class CapCutStudioDesktopApp:
 
         # Bottom-left layers active badge inside viewport
         self.preview_canvas.create_text(vx0 + 10, vy1 - 15, text=f"{len(active_layers)} Layers", fill=THEME["text_muted"], font=(FONT_FAMILY, 8, "bold"), anchor="w")
+
+        self._draw_path_overlay()
 
     def _on_layer_tree_click(self, event):
         item = self.layer_tree.identify_row(event.y)
@@ -1871,7 +2082,7 @@ class CapCutStudioDesktopApp:
             messagebox.showerror("Lỗi", f"Không thể xuất file filmstrip tổng:\n{e}")
 
     def _show_backup_tab(self):
-        self.notebook.select(4)
+        self.notebook.select(5)
 
     def _create_manual_backup(self):
         if not self.current_project_folder:
