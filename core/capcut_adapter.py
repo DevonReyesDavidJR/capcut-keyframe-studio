@@ -295,6 +295,25 @@ class CapCutAdapter:
         shutil.copy2(info_file, backup_path)
         return backup_path
 
+    @staticmethod
+    def _timeline_mirror_path(project_path: str, timeline_id: Optional[str]) -> Optional[str]:
+        """
+        CapCut 9.x keeps each timeline in Timelines/<timeline id>/draft_info.json and mirrors the
+        main timeline to the project's top-level draft_info.json (same id). CapCut opens the copy
+        under Timelines/, so every write must update both. Returns None for older drafts.
+        """
+        if not timeline_id:
+            return None
+        mirror = os.path.join(project_path, "Timelines", str(timeline_id), "draft_info.json")
+        return mirror if os.path.exists(mirror) else None
+
+    @staticmethod
+    def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
+        temp_file = path + ".tmp_write"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        shutil.move(temp_file, path)
+
     def restore_backup(self, folder_name: str, backup_filename: str) -> bool:
         """Restores a project JSON from a specific backup file."""
         project_path = os.path.join(self.draft_dir, folder_name)
@@ -309,9 +328,15 @@ class CapCutAdapter:
         if not os.path.exists(backup_path):
             raise FileNotFoundError(f"Backup file not found: {backup_path}")
 
+        with open(backup_path, "r", encoding="utf-8") as f:
+            restored = json.load(f)
+
         # Make a safety backup of current state before restoring
         self.backup_project(folder_name, label="pre-restore")
         shutil.copy2(backup_path, target_file)
+        mirror = self._timeline_mirror_path(project_path, restored.get("id"))
+        if mirror:
+            shutil.copy2(backup_path, mirror)
         return True
 
     def save_project_data(self, folder_name: str, data: Dict[str, Any]) -> str:
@@ -324,10 +349,9 @@ class CapCutAdapter:
         # Create backup first
         self.backup_project(folder_name, label="before-keyframe-update")
 
-        # Atomic write via temp file
-        temp_file = info_file + ".tmp_write"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        shutil.move(temp_file, info_file)
+        # Atomic writes: the top-level file and, on CapCut 9.x, the timeline copy CapCut actually opens
+        self._atomic_write_json(info_file, data)
+        mirror = self._timeline_mirror_path(project_path, data.get("id"))
+        if mirror:
+            self._atomic_write_json(mirror, data)
         return info_file
