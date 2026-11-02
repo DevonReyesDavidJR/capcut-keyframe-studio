@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parents[1]
 output = root / "dist" / "CapCut-Keyframe-Studio-Web.zip"
 output.parent.mkdir(exist_ok=True)
 files = [root / name for name in (
-    "run.py", "server.py", "desktop_app.py", "desktop_update.py", "requirements.txt",
+    "run.py", "server.py", "desktop_app.py", "desktop_update.py", "desktop_widgets.py", "requirements.txt",
     "LICENSE", "RELEASE_GUIDE.md", "start_web.bat", "start_web.sh",
 )]
 files += list((root / "core").glob("*.py"))

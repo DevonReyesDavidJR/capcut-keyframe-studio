@@ -41,6 +41,7 @@ if BASE_DIR not in sys.path:
 from core.capcut_adapter import CapCutAdapter
 from core.version import APP_VERSION
 from desktop_update import UpdateDialog
+from desktop_widgets import RoundedPanel, RoundedCombobox, rounded_surface
 from core.keyframe_engine import KeyframeEngine
 from core.speed_ramp_engine import SpeedRampEngine
 from core.stabilizer_engine import StabilizerEngine
@@ -86,7 +87,18 @@ if platform.system() == "Darwin":
 class StudioGroup(tk.Frame):
     """Flat section with a readable heading instead of a native etched border."""
     def __init__(self, parent, text="", fg=None, font=None, **kwargs):
+        kwargs.setdefault("padx", 12)
+        kwargs.setdefault("pady", 10)
         super().__init__(parent, **kwargs)
+        self._background = tk.Canvas(self, bg=self.cget("bg"), highlightthickness=0, borderwidth=0)
+        self._background.place(x=0, y=0, relwidth=1, relheight=1)
+        self._background.tk.call("lower", self._background._w)
+        def draw(event):
+            self._surface = rounded_surface(max(4, event.width), max(4, event.height),
+                self.cget("bg"), self.cget("bg"), 14, THEME["border"])
+            self._background.delete("all")
+            self._background.create_image(0, 0, anchor="nw", image=self._surface)
+        self.bind("<Configure>", draw)
         tk.Label(self, text=text, bg=self.cget("bg"), fg=THEME["text_sub"],
                  font=(FONT_FAMILY, 10, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
 
@@ -176,16 +188,11 @@ class RoundedButton(tk.Canvas):
         self.delete("all")
         color = self.hover_color if self.is_hovered else self.bg_color
         w, h = max(4, self.w), max(4, self.h)
-        r = min(7, (h - 2) / 2, (w - 2) / 2)
-        x0, y0, x1, y1 = 1, 1, w - 1, h - 1
-        points = [
-            x0+r, y0, x1-r, y0, x1, y0, x1, y0+r,
-            x1, y1-r, x1, y1, x1-r, y1, x0+r, y1,
-            x0, y1, x0, y1-r, x0, y0+r, x0, y0,
-        ]
         focused = self.focus_get() == self
-        outline = THEME["accent_cyan"] if focused else (color if self.variant == "primary" else THEME["border"])
-        self.create_polygon(points, smooth=True, splinesteps=24, fill=color, outline=outline, width=1)
+        border = THEME["accent_cyan"] if focused else (color if self.variant == "primary" else THEME["border"])
+        self.surface = rounded_surface(w, h, self.cget("bg"), color,
+                                       min(self.r, (h - 2) // 2), border)
+        self.create_image(0, 0, anchor="nw", image=self.surface)
         self.create_text(w / 2, h / 2, text=self.btn_text, fill=self.text_color, font=self.font)
 
     def _on_resize(self, event):
@@ -625,6 +632,16 @@ class CapCutStudioDesktopApp:
                         borderwidth=0, arrowsize=12)
         style.configure("TNotebook.Tab", borderwidth=0, padding=[9, 9], bordercolor=THEME["bg_panel"], lightcolor=THEME["bg_panel"], darkcolor=THEME["bg_panel"])
         style.configure("Treeview.Heading", background=THEME["bg_panel"], foreground=THEME["text_sub"])
+        style.layout("TNotebook.Tab", [])
+        style.configure("Rounded.TCombobox", fieldbackground=THEME["bg_input"],
+                        background=THEME["bg_input"], bordercolor=THEME["bg_input"],
+                        lightcolor=THEME["bg_input"], darkcolor=THEME["bg_input"],
+                        foreground=THEME["text_main"], borderwidth=0, padding=0)
+        style.map("Rounded.TCombobox",
+                  fieldbackground=[("readonly", THEME["bg_input"])],
+                  foreground=[("readonly", THEME["text_main"])],
+                  selectbackground=[("readonly", THEME["bg_input"])],
+                  selectforeground=[("readonly", THEME["text_main"])])
         self.root.option_add("*TCombobox*Listbox.background", THEME["bg_input"])
         self.root.option_add("*TCombobox*Listbox.foreground", THEME["text_main"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", "#344f73")
@@ -666,7 +683,7 @@ class CapCutStudioDesktopApp:
         project_bar.pack(side="top", fill="x")
         tk.Label(project_bar, text="DỰ ÁN", bg=THEME["bg_app"], fg=THEME["text_muted"],
                  font=(FONT_FAMILY, 9, "bold")).pack(side="left", padx=(0, 16))
-        self.proj_combo = ttk.Combobox(project_bar, state="readonly", width=42)
+        self.proj_combo = RoundedCombobox(project_bar, state="readonly", width=42)
         self.proj_combo.pack(side="left", fill="x", expand=True, padx=(0, 12))
         self.proj_combo.bind("<<ComboboxSelected>>", self._on_project_selected)
         RoundedButton(project_bar, text="Chọn thư mục", width=118, height=34,
@@ -682,12 +699,14 @@ class CapCutStudioDesktopApp:
         self.split_pane.pack(side="top", fill="both", expand=True, padx=8, pady=4)
 
         # Left Operations Panel
-        self.left_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.left_panel, minsize=340, width=390)
+        self.left_shell = RoundedPanel(self.split_pane, fill=THEME["bg_panel"], radius=18, padding=12, autoheight=False)
+        self.left_panel = self.left_shell.body
+        self.split_pane.add(self.left_shell, minsize=350, width=410)
 
         # Right Studio Monitor Panel
-        self.right_panel = tk.Frame(self.split_pane, bg=THEME["bg_panel"], padx=6, pady=6)
-        self.split_pane.add(self.right_panel, minsize=500)
+        self.right_shell = RoundedPanel(self.split_pane, fill=THEME["bg_panel"], radius=18, padding=12, autoheight=False)
+        self.right_panel = self.right_shell.body
+        self.split_pane.add(self.right_shell, minsize=500)
 
         self._build_operations_tabs()
         self._build_studio_monitor()
@@ -696,8 +715,19 @@ class CapCutStudioDesktopApp:
     # LEFT OPERATIONS TABS
     # --------------------------------------------------------------------------
     def _build_operations_tabs(self):
+        navigation = tk.Frame(self.left_panel, bg=THEME["bg_panel"])
+        navigation.pack(fill="x", pady=(0, 10))
+        self.tab_buttons = []
         self.notebook = ttk.Notebook(self.left_panel)
         self.notebook.pack(fill="both", expand=True)
+        self.notebook.bind("<<NotebookTabChanged>>", self._sync_tab_buttons)
+        for index, title in enumerate(("Chuyển động", "Tốc độ", "Chống rung", "Phân tích", "Sao lưu")):
+            navigation.columnconfigure(index, weight=1, uniform="tabs")
+            button = RoundedButton(navigation, text=title, width=72, height=32,
+                                   radius=10, font=(FONT_FAMILY, 9, "bold"),
+                                   command=lambda idx=index: self.notebook.select(idx))
+            button.grid(row=0, column=index, sticky="ew", padx=2)
+            self.tab_buttons.append(button)
 
         # Tab 1: Keyframe Motion Rhythms
         tab_rhythm = ttk.Frame(self.notebook, padding=8)
@@ -723,6 +753,15 @@ class CapCutStudioDesktopApp:
         tab_backup = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(tab_backup, text="Sao lưu")
         self._build_tab_backups(tab_backup)
+
+    def _sync_tab_buttons(self, event=None):
+        if not self.notebook.tabs():
+            return
+        selected = self.notebook.index(self.notebook.select())
+        for index, button in enumerate(self.tab_buttons):
+            button.bg_color = "#283e58" if index == selected else THEME["bg_panel"]
+            button.text_color = THEME["accent_cyan"] if index == selected else THEME["text_muted"]
+            button._draw()
 
     def _build_tab_rhythm(self, parent):
         tk.Label(parent, text="Chuyển động", bg=THEME["bg_panel"], fg=THEME["text_main"],
@@ -767,12 +806,12 @@ class CapCutStudioDesktopApp:
         form = StudioGroup(inner, text="PHẠM VI & THÔNG SỐ", bg=THEME["bg_panel"], padx=4, pady=12)
         form.pack(fill="x", pady=(18, 0))
         tk.Label(form, text="Track nhận hiệu ứng", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(anchor="w")
-        self.rhythm_track_combo = ttk.Combobox(form, state="readonly")
+        self.rhythm_track_combo = RoundedCombobox(form, state="readonly")
         self.rhythm_track_combo["values"] = ["Tất cả Video Track", "Chỉ Track 0 (Chính)", "Chỉ Track 1 (Overlay 1)"]
         self.rhythm_track_combo.current(0)
         self.rhythm_track_combo.pack(fill="x", pady=(5, 12))
         tk.Label(form, text="Đường cong chuyển động", bg=THEME["bg_panel"], fg=THEME["text_sub"]).pack(anchor="w")
-        self.rhythm_curve_combo = ttk.Combobox(form, state="readonly")
+        self.rhythm_curve_combo = RoundedCombobox(form, state="readonly")
         self.rhythm_curve_combo["values"] = ["FreeCurveInOut (Mượt)", "FreeCurveIn", "FreeCurveOut", "Line"]
         self.rhythm_curve_combo.current(0)
         self.rhythm_curve_combo.pack(fill="x", pady=(5, 12))
@@ -877,7 +916,7 @@ class CapCutStudioDesktopApp:
         row1 = tk.Frame(group_opt, bg=THEME["bg_panel"])
         row1.pack(fill="x", pady=4)
         tk.Label(row1, text="Chế độ chống rung:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
-        self.stab_mode_combo = ttk.Combobox(row1, state="readonly", width=22)
+        self.stab_mode_combo = RoundedCombobox(row1, state="readonly", width=22)
         self.stab_mode_combo["values"] = ["Khóa Mốc Tuyệt Đối (Dead-Lock)", "Giảm Rung Mượt (Smooth Damping)"]
         self.stab_mode_combo.current(0)
         self.stab_mode_combo.pack(side="left", padx=4)
@@ -885,7 +924,7 @@ class CapCutStudioDesktopApp:
         row2 = tk.Frame(group_opt, bg=THEME["bg_panel"])
         row2.pack(fill="x", pady=4)
         tk.Label(row2, text="Auto-Zoom bảo vệ viền:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
-        self.stab_zoom_combo = ttk.Combobox(row2, state="readonly", width=10)
+        self.stab_zoom_combo = RoundedCombobox(row2, state="readonly", width=10)
         self.stab_zoom_combo["values"] = ["1.05x", "1.10x", "1.15x", "1.20x", "1.25x"]
         self.stab_zoom_combo.current(1)
         self.stab_zoom_combo.pack(side="left", padx=4)
@@ -1016,9 +1055,9 @@ class CapCutStudioDesktopApp:
         self.lbl_timecode.pack(fill="x", pady=(6, 0))
         self.scrubber = ModernScrubber(transport, height=20, on_seek=self._on_scrubber_seek)
         self.scrubber.pack(fill="x")
-        bezel = tk.Frame(self.right_panel, bg="#090b0e")
+        bezel = RoundedPanel(self.right_panel, fill="#090b0e", radius=16, padding=8, autoheight=False)
         bezel.pack(side="top", fill="both", expand=True, pady=(4, 6))
-        self.preview_canvas = tk.Canvas(bezel, bg="#090b0e", highlightthickness=0)
+        self.preview_canvas = tk.Canvas(bezel.body, bg="#090b0e", highlightthickness=0)
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", lambda e: self._render_current_frame())
         if self.root.winfo_screenheight() < 850:
@@ -1036,8 +1075,9 @@ class CapCutStudioDesktopApp:
     # BOTTOM VISUAL TIMELINE BAR
     # --------------------------------------------------------------------------
     def _build_timeline_bar(self):
-        timeline_frame = tk.Frame(self.root, bg=THEME["timeline_bg"], height=150, highlightbackground=THEME["border"], highlightthickness=1)
-        timeline_frame.pack(side="bottom", fill="x", padx=8, pady=(0, 6))
+        timeline_shell = RoundedPanel(self.root, fill=THEME["timeline_bg"], radius=16, padding=10)
+        timeline_shell.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
+        timeline_frame = timeline_shell.body
 
         tl_header = tk.Frame(timeline_frame, bg=THEME["bg_header"], height=22, padx=8)
         tl_header.pack(side="top", fill="x")
