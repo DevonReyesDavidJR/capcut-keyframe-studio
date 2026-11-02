@@ -1,0 +1,49 @@
+name: Publish visually reviewed preview
+on:
+  push:
+    branches: [codex/refine-studio-ui-media]
+    paths: [".github/workflows/publish-reviewed.yml"]
+permissions:
+  contents: write
+jobs:
+  publish-reviewed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify tested source and completed build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ce2262168d6f332a0799eecbc6df22b6bc53efe8
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41383025389" > run.json
+          python -c 'import json,os; r=json.load(open("run.json")); assert r["conclusion"]=="success" and r["head_sha"]==os.environ["EXPECTED_SHA"]'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 41383025389
+          path: release-assets
+          merge-multiple: true
+      - name: Prepare reviewed release notes
+        shell: python
+        run: |
+          from pathlib import Path
+          Path("notes.md").write_text("""Native editor fixes after visual checks on macOS:
+          - Rebuilt button rendering, readable dark inputs, quieter colors and clear selected presets.
+          - Keep Apply visible on small displays. Reserve transport space and allow the layer inspector to collapse for a larger preview.
+          - Scroll through all tracks and layers; coalesce overlapping keyframe markers.
+          - Preserve static clip transforms and alpha. Apply uniform scale keyframes to both axes.
+          - Repair missing motion, speed and stabilizer engine calls; cover draft writes with regression checks.
+          - Desktop-Preview.png is an actual macOS screenshot using synthetic sample assets, not the user's project.
+
+          Install the DMG matching your Mac processor and replace the previous app in Applications.
+          Close the old app before opening the new one.
+          FFmpeg remains a separate prerequisite: brew install ffmpeg.
+          Preview macOS builds are not Developer-ID signed or notarized.
+          The Web ZIP runs locally; no public Web deployment is included.
+          """)
+      - name: Checksums
+        working-directory: release-assets
+        run: sha256sum *.dmg *.exe *.zip *.png > SHA256SUMS.txt
+      - name: Publish reviewed artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create v0.2.0-preview.2 release-assets/* --repo "$GITHUB_REPOSITORY" --target "ce2262168d6f332a0799eecbc6df22b6bc53efe8" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
