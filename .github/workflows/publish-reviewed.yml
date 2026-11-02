@@ -47,4 +47,10 @@ jobs:
       - name: Publish reviewed artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create v0.2.0-preview.2 release-assets/* --repo "$GITHUB_REPOSITORY" --target "ce2262168d6f332a0799eecbc6df22b6bc53efe8" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
+        run: |
+          if gh release view v0.2.0-preview.2 --repo "$GITHUB_REPOSITORY" --json targetCommitish > existing.json 2>/dev/null; then
+            python -c 'import json; assert json.load(open("existing.json"))["targetCommitish"] == "ce2262168d6f332a0799eecbc6df22b6bc53efe8"'
+            echo "The reviewed build is already published."
+          else
+            gh release create v0.2.0-preview.2 release-assets/* --repo "$GITHUB_REPOSITORY" --target "ce2262168d6f332a0799eecbc6df22b6bc53efe8" --title "CapCut Keyframe Studio — native UI fixes" --notes-file notes.md --prerelease
+          fi
