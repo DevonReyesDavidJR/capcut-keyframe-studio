@@ -435,6 +435,32 @@ class KeyframeEngine:
         return [cls.create_property_group("KFTypeScaleX", kfs)]
 
     @classmethod
+    def preset_punch_zoom(
+        cls,
+        duration_us: int,
+        peak_scale: float = 1.35,
+        base_scale: float = 1.0,
+        punch_duration_ms: int = 200
+    ) -> List[Dict[str, Any]]:
+        """
+        Punch-in zoom: snaps quickly to peak_scale, then eases back to base_scale.
+        """
+        punch_us = min(duration_us, punch_duration_ms * 1000)
+        attack_us = max(1, int(punch_us * 0.35))
+        kfs = [
+            cls.create_single_keyframe(0, base_scale, curve_type="FreeCurveInOut",
+                                       right_control={"x": float(attack_us * 0.3), "y": 0.0}),
+            cls.create_single_keyframe(attack_us, peak_scale, curve_type="FreeCurveInOut",
+                                       right_control={"x": float((punch_us - attack_us) * 0.4), "y": 0.0}),
+        ]
+        if punch_us > attack_us:
+            kfs.append(cls.create_single_keyframe(punch_us, base_scale, curve_type="FreeCurveInOut"))
+        if punch_us < duration_us:
+            kfs.append(cls.create_single_keyframe(duration_us, base_scale, curve_type="Line"))
+
+        return [cls.create_property_group("KFTypeScaleX", kfs)]
+
+    @classmethod
     def preset_whip_pan(
         cls,
         duration_us: int,
@@ -541,6 +567,232 @@ class KeyframeEngine:
             kfs.append(cls.create_single_keyframe(duration_us, 0.0, curve_type="FreeCurveInOut"))
 
         return [cls.create_property_group("KFTypeAlpha", kfs)]
+
+    # ==========================================
+    # HAND-DRAWN MOTION PATH
+    # ==========================================
+
+    @staticmethod
+    def _resample_path(
+        points: List[Tuple[float, float, float]],
+        aspect: float,
+        step: float
+    ) -> List[Tuple[float, float, float]]:
+        """
+        Resamples a polyline of (x, y, t) at equal arc-length spacing. Distances are measured
+        with x scaled by the canvas aspect so spacing is uniform in screen pixels.
+        """
+        pts = [points[0]]
+        for p in points[1:]:
+            if abs(p[0] - pts[-1][0]) > 1e-6 or abs(p[1] - pts[-1][1]) > 1e-6:
+                pts.append(p)
+        if len(pts) < 2:
+            return pts
+
+        out = [pts[0]]
+        carry = 0.0
+        for i in range(len(pts) - 1):
+            (x1, y1, t1), (x2, y2, t2) = pts[i], pts[i + 1]
+            seg_len = math.hypot((x2 - x1) * aspect, y2 - y1)
+            pos = step - carry
+            while pos <= seg_len:
+                r = pos / seg_len
+                out.append((x1 + (x2 - x1) * r, y1 + (y2 - y1) * r, t1 + (t2 - t1) * r))
+                pos += step
+            carry = seg_len - (pos - step)
+        if out[-1] != pts[-1]:
+            out.append(pts[-1])
+        return out
+
+    @classmethod
+    def smooth_motion_path(
+        cls,
+        points: List[Tuple[float, float, float]],
+        smoothing: float = 0.5,
+        aspect: float = 9 / 16.0
+    ) -> List[Tuple[float, float, float]]:
+        """
+        Turns a shaky mouse stroke into a smooth path.
+        points: (x, y, t) in CapCut position units (0 = center, +-1 = canvas edge, +y = up),
+        t = time the point was drawn (seconds). smoothing: 0 (raw) .. 1 (very smooth).
+        Start and end points are preserved exactly.
+        """
+        if len(points) < 2:
+            return list(points)
+        total = sum(
+            math.hypot((points[i + 1][0] - points[i][0]) * aspect, points[i + 1][1] - points[i][1])
+            for i in range(len(points) - 1)
+        )
+        if total <= 1e-6:
+            return [points[0], points[-1]]
+
+        step = max(total / 400.0, 0.004)
+        path = cls._resample_path(points, aspect, step)
+        n = len(path)
+        radius = int(round(max(0.0, min(1.0, smoothing)) * n * 0.12))
+        if radius < 1:
+            return path
+
+        # Endpoint-preserving moving average, applied twice (approximates a Gaussian)
+        for _ in range(2):
+            smoothed = []
+            for i in range(n):
+                r = min(radius, i, n - 1 - i)
+                window = path[i - r:i + r + 1]
+                k = float(len(window))
+                smoothed.append((
+                    sum(p[0] for p in window) / k,
+                    sum(p[1] for p in window) / k,
+                    sum(p[2] for p in window) / k
+                ))
+            path = smoothed
+        return path
+
+    @staticmethod
+    def center_path(
+        path: List[Tuple[float, float, float]],
+        center: Tuple[float, float] = (0.0, 0.0)
+    ) -> List[Tuple[float, float, float]]:
+        """Shifts a path so the middle of its bounding box sits on `center` (default: frame center)."""
+        if not path:
+            return path
+        xs = [p[0] for p in path]
+        ys = [p[1] for p in path]
+        dx = center[0] - (min(xs) + max(xs)) / 2.0
+        dy = center[1] - (min(ys) + max(ys)) / 2.0
+        return [(x + dx, y + dy, t) for x, y, t in path]
+
+    @staticmethod
+    def _auto_timing_params(path: List[Tuple[float, float, float]], aspect: float) -> List[float]:
+        """
+        Path parameter (0..1) per point for automatic speed: the clip slows down through sharp
+        turns, moves faster on straight stretches and eases in/out at both ends. The result is
+        normalised so the whole path always fills exactly the clip duration.
+        """
+        n = len(path)
+        seg_len = [math.hypot((path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]) for i in range(n - 1)]
+
+        # Turning angle at each interior point (radians)
+        turn = [0.0] * n
+        for i in range(1, n - 1):
+            ax, ay = (path[i][0] - path[i - 1][0]) * aspect, path[i][1] - path[i - 1][1]
+            bx, by = (path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]
+            if math.hypot(ax, ay) > 1e-9 and math.hypot(bx, by) > 1e-9:
+                turn[i] = abs(math.atan2(ax * by - ay * bx, ax * bx + ay * by))
+
+        # Spread each turn over its neighbourhood so slowing starts before the corner
+        radius = max(1, n // 40)
+        spread = []
+        for i in range(n):
+            lo, hi = max(0, i - radius), min(n, i + radius + 1)
+            spread.append(sum(turn[lo:hi]))
+
+        total_len = sum(seg_len) or 1.0
+        times = [0.0]
+        walked = 0.0
+        for i in range(n - 1):
+            curvature = (spread[i] + spread[i + 1]) / 2.0
+            speed = 1.0 / (1.0 + 4.0 * curvature)          # sharp corner -> slower
+            walked += seg_len[i]
+            u = walked / total_len
+            ease = min(1.0, u / 0.12, (1.0 - u + seg_len[i] / total_len) / 0.12)
+            speed *= 0.35 + 0.65 * max(0.0, ease)            # soft start and stop
+            times.append(times[-1] + seg_len[i] / max(speed, 1e-3))
+        return [t / times[-1] for t in times]
+
+    @classmethod
+    def generate_motion_path_keyframes(
+        cls,
+        points: List[Tuple[float, float, float]],
+        duration_us: int,
+        fps: int = 30,
+        smoothing: float = 0.5,
+        timing: str = "auto",          # "auto" (slow on turns, eased ends), "ease", "constant", "drawn" (replay hand speed)
+        aspect: float = 9 / 16.0,
+        tolerance: float = 0.002,      # Max deviation (position units) allowed when dropping redundant keyframes
+        center: Optional[Tuple[float, float]] = None  # Re-centre the path on this point (None = keep where drawn)
+    ) -> List[Dict[str, Any]]:
+        """
+        Builds KFTypePositionX / KFTypePositionY keyframes that move the clip along a hand-drawn path.
+        The first point of the path is reached on the clip's first frame and the last point on its last
+        frame. The stroke is smoothed, optionally centred, sampled every frame, then simplified so only
+        the keyframes needed to stay within `tolerance` of the smooth path are kept.
+        """
+        path = cls.smooth_motion_path(points, smoothing, aspect)
+        if center is not None:
+            path = cls.center_path(path, center)
+        dists = [0.0]
+        for i in range(len(path) - 1):
+            dists.append(dists[-1] + math.hypot((path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]))
+        if len(path) < 2 or dists[-1] < 0.01 or duration_us <= 0:
+            raise ValueError("Đường vẽ quá ngắn. Hãy kéo chuột vẽ một đường dài hơn.")
+
+        # Path parameter (0..1) for each point: arc length, or drawing time for "drawn"
+        if timing == "auto":
+            params = cls._auto_timing_params(path, aspect)
+        elif timing == "drawn" and path[-1][2] - path[0][2] > 1e-3:
+            t0, t1 = path[0][2], path[-1][2]
+            params = [(p[2] - t0) / (t1 - t0) for p in path]
+            for i in range(1, len(params)):
+                params[i] = max(params[i], params[i - 1])
+        else:
+            params = [d / dists[-1] for d in dists]
+
+        def position_at(u: float) -> Tuple[float, float]:
+            lo, hi = 0, len(params) - 1
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                if params[mid] <= u:
+                    lo = mid
+                else:
+                    hi = mid
+            span = params[hi] - params[lo]
+            r = (u - params[lo]) / span if span > 1e-9 else 0.0
+            r = max(0.0, min(1.0, r))
+            return (path[lo][0] + (path[hi][0] - path[lo][0]) * r,
+                    path[lo][1] + (path[hi][1] - path[lo][1]) * r)
+
+        # Sample once per frame
+        frame_us = max(1, int(1_000_000 / max(1, fps)))
+        times = list(range(0, duration_us, frame_us)) + [duration_us]
+        samples = []
+        for t in times:
+            f = t / float(duration_us)
+            if timing == "ease":
+                f = 0.5 - 0.5 * math.cos(math.pi * f)
+            x, y = position_at(f)
+            samples.append((t, x, y))
+
+        # Ramer-Douglas-Peucker in time: keep a sample only if linear interpolation between kept
+        # neighbours would drift more than `tolerance` from the smooth path
+        keep = {0, len(samples) - 1}
+        stack = [(0, len(samples) - 1)]
+        while stack:
+            a, b = stack.pop()
+            ta, xa, ya = samples[a]
+            tb, xb, yb = samples[b]
+            worst, worst_i = 0.0, -1
+            for i in range(a + 1, b):
+                ti, xi, yi = samples[i]
+                r = (ti - ta) / float(tb - ta)
+                err = math.hypot((xi - (xa + (xb - xa) * r)) * aspect, yi - (ya + (yb - ya) * r))
+                if err > worst:
+                    worst, worst_i = err, i
+            if worst > tolerance and worst_i > 0:
+                keep.add(worst_i)
+                stack.append((a, worst_i))
+                stack.append((worst_i, b))
+
+        pos_x_kfs, pos_y_kfs = [], []
+        for i in sorted(keep):
+            t, x, y = samples[i]
+            pos_x_kfs.append(cls.create_single_keyframe(t, round(x, 4), curve_type="Line"))
+            pos_y_kfs.append(cls.create_single_keyframe(t, round(y, 4), curve_type="Line"))
+
+        return [
+            cls.create_property_group("KFTypePositionX", pos_x_kfs),
+            cls.create_property_group("KFTypePositionY", pos_y_kfs)
+        ]
 
     # ==========================================
     # AUDIO BEAT SYNC KEYFRAMING

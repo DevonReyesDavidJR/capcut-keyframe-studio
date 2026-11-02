@@ -20,6 +20,16 @@ let trackVisibility = {}; // { trackIndex: boolean }
 let timelineZoomPxPerSec = 75;
 let cachedLayerImages = {};
 
+// Hand-drawn motion path state. Points are [x, y, t] in CapCut position units
+// (0 = center, ±1 = screen edge, +y = up) and t = seconds since the stroke began.
+let pathDrawMode = false;
+let pathPoints = [];
+let pathSmoothed = [];   // [[x, y], ...] returned by /api/smooth_path
+let pathOffset = [0, 0]; // Shift applied by centring, so the raw stroke is drawn alongside
+let pathIsDrawing = false;
+let pathStrokeStart = 0;
+let pathSmoothTimer = null;
+
 // Preset definitions with default parameters
 const PRESET_CONFIGS = {
   rhythmic_switch_entrance: {
@@ -172,6 +182,7 @@ const PRESET_CONFIGS = {
 // Initialize app when DOM loads
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
+  setupMotionPathListeners();
   loadProjects();
   renderPresetParams();
   drawCurvePreview();
@@ -1048,6 +1059,7 @@ function updateMasterPreview() {
     scrubber.value = Math.round((playheadTime / dur) * 1000);
   }
 
+  drawMotionPathOverlay(ctx, cw, ch);
   updatePlayheadPosition();
 }
 
@@ -1082,7 +1094,8 @@ function getSegmentTransformAt(seg, relTimeSec) {
           const prog = deltaT > 0 ? (relTimeUs - k0.time_offset) / deltaT : 0;
           const v0 = k0.values?.[0] ?? 0;
           const v1 = k1.values?.[0] ?? 0;
-          const eased = 0.5 * (1.0 - Math.cos(prog * Math.PI));
+          // "Line" keyframes interpolate linearly in CapCut; curves get an ease approximation
+          const eased = k0.curveType === "Line" ? prog : 0.5 * (1.0 - Math.cos(prog * Math.PI));
           val = v0 + (v1 - v0) * eased;
           break;
         }
@@ -2649,5 +2662,234 @@ function showToast(message, type = "success") {
   setTimeout(() => {
     toast.classList.add("hidden");
   }, 3500);
+}
+
+// ==========================================
+// HAND-DRAWN MOTION PATH
+// ==========================================
+
+function setupMotionPathListeners() {
+  const canvas = document.getElementById("masterPreviewCanvas");
+  document.getElementById("btnPathDraw").addEventListener("click", () => setPathDrawMode(!pathDrawMode));
+  document.getElementById("btnPathClear").addEventListener("click", () => {
+    pathPoints = [];
+    pathSmoothed = [];
+    updatePathStatus();
+    updateMasterPreview();
+  });
+  document.getElementById("sliderPathSmooth").addEventListener("input", (e) => {
+    document.getElementById("pathSmoothVal").textContent = e.target.value;
+    requestSmoothedPath();
+  });
+  document.getElementById("btnApplyMotionPath").addEventListener("click", handleApplyMotionPath);
+  document.getElementById("chkPathCenter").addEventListener("change", requestSmoothedPath);
+
+  // Pointer events cover mouse, trackpad, pen and touch on macOS and Windows alike
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!pathDrawMode || !activeProject) return;
+    e.preventDefault();
+    try {
+      // Keeps the stroke going if the cursor leaves the canvas mid-drag
+      canvas.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // Not fatal: drawing still works without capture
+    }
+    pathIsDrawing = true;
+    pathStrokeStart = performance.now();
+    pathSmoothed = [];
+    pathOffset = [0, 0];
+    pathPoints = [pointerToCapCut(e, canvas)];
+    updateMasterPreview();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!pathIsDrawing) return;
+    e.preventDefault();
+    pathPoints.push(pointerToCapCut(e, canvas));
+    updateMasterPreview();
+  });
+  const endStroke = (e) => {
+    if (!pathIsDrawing) return;
+    pathIsDrawing = false;
+    try {
+      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    } catch (err) {
+      // Capture may never have been taken
+    }
+    updatePathStatus();
+    requestSmoothedPath();
+  };
+  canvas.addEventListener("pointerup", endStroke);
+  canvas.addEventListener("pointercancel", endStroke);
+}
+
+function setPathDrawMode(on) {
+  pathDrawMode = on;
+  const btn = document.getElementById("btnPathDraw");
+  const canvas = document.getElementById("masterPreviewCanvas");
+  canvas.classList.toggle("path-drawing", on);
+  btn.textContent = on ? "⏹️ Dừng Vẽ" : "✏️ Bắt Đầu Vẽ";
+  btn.classList.toggle("btn-outline-danger", on);
+  btn.classList.toggle("btn-secondary", !on);
+  if (on) {
+    if (isPlaying) togglePlayPause();
+    document.getElementById("pathStatus").textContent = "Đang ở chế độ vẽ: giữ chuột và kéo trên Trình Phát Đa Lớp.";
+  } else {
+    updatePathStatus();
+  }
+}
+
+function pointerToCapCut(e, canvas) {
+  // Uses the on-screen size, so it stays correct when CSS scales the canvas
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top) / rect.height;
+  return [px * 2 - 1, -(py * 2 - 1), (performance.now() - pathStrokeStart) / 1000];
+}
+
+function projectAspect() {
+  if (!activeProject) return 9 / 16;
+  return (activeProject.canvas_width || 1080) / (activeProject.canvas_height || 1920);
+}
+
+function pathSmoothingValue() {
+  return Number(document.getElementById("sliderPathSmooth").value) / 100;
+}
+
+function requestSmoothedPath() {
+  // Debounced: the server runs the same smoothing that "Áp Dụng" will use
+  clearTimeout(pathSmoothTimer);
+  if (pathPoints.length < 2) return;
+  pathSmoothTimer = setTimeout(async () => {
+    try {
+      const res = await fetch("/api/smooth_path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          points: pathPoints,
+          smoothing: pathSmoothingValue(),
+          aspect: projectAspect(),
+          center: document.getElementById("chkPathCenter").checked
+        })
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        pathSmoothed = data.points;
+        pathOffset = data.offset || [0, 0];
+        updateMasterPreview();
+      }
+    } catch (err) {
+      // Preview only; applying still works without it
+    }
+  }, 60);
+}
+
+function drawMotionPathOverlay(ctx, cw, ch) {
+  if (pathPoints.length < 2) return;
+  const toPx = (x, y) => [cw / 2 + x * (cw / 2), ch / 2 - y * (ch / 2)];
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Raw stroke (grey, dashed once the smoothed path is available)
+  ctx.strokeStyle = pathSmoothed.length ? "rgba(156, 163, 175, 0.7)" : "#9ca3af";
+  ctx.lineWidth = pathSmoothed.length ? 1 : 2;
+  ctx.setLineDash(pathSmoothed.length ? [3, 3] : []);
+  ctx.beginPath();
+  pathPoints.forEach(([x, y], i) => {
+    const [px, py] = toPx(x + pathOffset[0], y + pathOffset[1]);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Smoothed path that will be applied
+  if (pathSmoothed.length >= 2) {
+    ctx.strokeStyle = "#00f2fe";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    pathSmoothed.forEach(([x, y], i) => {
+      const [px, py] = toPx(x, y);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+  }
+
+  const line = pathSmoothed.length >= 2 ? pathSmoothed : pathPoints;
+  const dot = ([x, y], color) => {
+    const [px, py] = toPx(x, y);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  };
+  dot(line[0], "#10b981");
+  dot(line[line.length - 1], "#ef4444");
+  ctx.restore();
+}
+
+function updatePathStatus() {
+  const el = document.getElementById("pathStatus");
+  if (pathPoints.length < 2) {
+    el.textContent = "Chưa có nét vẽ.";
+    return;
+  }
+  const fmt = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+  const [sx, sy] = pathPoints[0];
+  const [ex, ey] = pathPoints[pathPoints.length - 1];
+  el.textContent = `Nét vẽ: ${pathPoints.length} điểm  |  🟢 (${fmt(sx)}, ${fmt(sy)}) → 🔴 (${fmt(ex)}, ${fmt(ey)})`;
+}
+
+async function handleApplyMotionPath() {
+  if (!activeProject) return;
+  if (pathPoints.length < 2) {
+    showToast("Chưa có nét vẽ. Bấm 'Bắt Đầu Vẽ' rồi kéo chuột trên Trình Phát Đa Lớp.", "warning");
+    return;
+  }
+  if (selectedSegments.size === 0) {
+    showToast("Vui lòng click chọn clip trên Timeline trước khi áp dụng!", "warning");
+    return;
+  }
+
+  const keys = Array.from(selectedSegments);
+  const targets = keys.map(key => {
+    const [t, s] = key.split("_").map(Number);
+    return { track_index: t, segment_index: s };
+  });
+
+  try {
+    const res = await fetch("/api/apply_motion_path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder_name: activeProject.folder_name,
+        targets: targets,
+        points: pathPoints,
+        smoothing: pathSmoothingValue(),
+        timing: document.getElementById("selectPathTiming").value,
+        center: document.getElementById("chkPathCenter").checked
+      })
+    });
+    const data = await res.json();
+    if (data.status !== "success") {
+      showToast(data.message || "Lỗi khi áp dụng đường đi", "error");
+      return;
+    }
+
+    setPathDrawMode(false);
+    await selectProject(activeProject.folder_name);
+    // Keep the clips selected and jump to the first one so Space plays the new motion
+    keys.forEach(k => selectedSegments.add(k));
+    updateClipSelectionUI();
+    const [t0, s0] = keys[0].split("_").map(Number);
+    const firstSeg = activeProject.tracks.find(tr => tr.index === t0)?.segments.find(sg => sg.index === s0);
+    if (firstSeg) seekToTime(firstSeg.start_seconds);
+    showToast(`${data.message} Bấm Space để xem thử.`, "success");
+  } catch (err) {
+    showToast("Lỗi kết nối tới máy chủ", "error");
+  }
 }
 

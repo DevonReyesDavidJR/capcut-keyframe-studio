@@ -26,6 +26,7 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Whip Pan**: Gạt chuyển cảnh tốc độ cao sang trái/phải/lên/xuống.
    - **Breathing Pulse**: Nhịp thở/đập tuần hoàn êm ái.
    - **Fade Opacity**: Làm mờ dần / Hiện dần clip.
+   - **✏️ Vẽ Đường Đi (Motion Path)** (app Desktop macOS / Windows và bản Web): Giữ chuột vẽ đường đi trực tiếp trên màn hình preview, tool tự làm mượt nét vẽ tay và tạo keyframe Vị trí X/Y để clip chạy theo đúng đường đó (chọn nhịp: mượt đầu & cuối, tốc độ đều, hoặc theo tốc độ vẽ tay).
 2. **📱 Trình Phát Xem Trước Đa Lớp & Timeline CapCut Trực Quan (Multi-Layer Viewer & Timeline)**:
    - **Màn hình Preview Đa Lớp (Composite Preview Monitor)**: Xem toàn bộ các layer video, ảnh phủ, mask, sticker chồng lên nhau tại bất kỳ khung hình nào theo đúng trục thứ tự hiển thị của CapCut.
    - **Tắt/Bật Mắt Ẩn Hiện Lớp (👁️ Layer Visibility)**: Dễ dàng ẩn hoặc hiện từng track để soi riêng chuyển động của layer đó hoặc xem tổng thể cả video.
@@ -52,7 +53,7 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
    - **Bullet Time (Ma Trận)**: Tốc độ chuẩn $1\text{x} \rightarrow$ Khựng siêu chậm $0.2\text{x}$ ở điểm nhấn $\rightarrow$ Bật lại bình thường.
    - **Flash In / Flash Out**: Lao cực nhanh vào hoặc vút nhanh thoát cảnh.
    - **Beat-Synced Speed Ramp**: Tự động giảm tốc độ cực chậm ở đúng từng nốt beat/bass và tua nhanh ở khoảng giữa 2 beat.
-   - **Sao chép hàng loạt & Tự tính thời lượng**: Áp dụng đường cong tốc độ cho 20 clip cùng lúc, tự động tính toán lại thời lượng hiển thị (`target_timerange`) để timeline không bao giờ bị xô lệch hay hở khoảng trống.
+   - **Sao chép hàng loạt & Tự tính thời lượng**: Áp dụng đường cong tốc độ cho 20 clip cùng lúc, tự động tính toán lại thời lượng hiển thị (`target_timerange`) và dời các clip phía sau trên cùng track để timeline không bị hở hay chồng lên nhau.
 
 5. **🎯 Chống Rung Khóa Điểm Mốc (Point-Lock Stabilizer & Auto-Zoom Crop Protection)**:
    - **Khóa Trục Cố Định (Dead-Lock 100%)**: Khóa cứng điểm mốc đứng im phăng phắc tại 1 vị trí cố định trên màn hình bất kể máy quay bị rung lắc hay người cầm máy di chuyển.
@@ -89,7 +90,10 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
 
 ## 🚀 Hướng Dẫn Cài Đặt & Sử Dụng (Quick Start)
 
-Tool sử dụng **100% Python Standard Library**, **không cần cài đặt thư viện rườm rà (Zero Pip Dependencies)**.
+**Yêu cầu:**
+- **Python 3.8+**
+- **Pillow** cho chế độ Desktop (`run_mac.sh` / `run_win.bat` tự cài ở lần chạy đầu, hoặc `python3 -m pip install -r requirements.txt`). Nếu thiếu Pillow, tool tự chuyển sang chế độ Web (chỉ cần thư viện chuẩn Python).
+- **FFmpeg** trong PATH cho thumbnail video, chống rung, xuất filmstrip và bắt beat từ file mp3/m4a (`brew install ffmpeg` trên macOS).
 
 ### 1. Tải dự án về máy
 ```bash
@@ -121,7 +125,7 @@ run_win.bat
 
 1. **Lưu hoặc đóng dự án trong CapCut** trước khi thao tác trên tool để tránh xung đột file.
 2. Trên giao diện tool, chọn dự án ở cột bên trái.
-3. Tích chọn các clip cần chèn keyframe ở phần Timeline Tracks.
+3. Click chọn clip cần chèn keyframe trên Timeline (Shift+Click để chọn nhiều). Nếu không chọn clip nào, tool sẽ hỏi xác nhận trước khi áp dụng cho cả track.
 4. Chọn Preset mong muốn hoặc chuyển sang tab **Auto Beat / Nhịp Nhạc**.
 5. Nhấn **Áp Dụng Vào Các Clip Đã Chọn**.
 6. Mở lại CapCut và thưởng thức thành quả! 🎉

@@ -323,6 +323,15 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
             self._handle_apply_stabilizer(payload)
             return
 
+        # Hand-drawn motion path
+        if path == "/api/smooth_path":
+            self._handle_smooth_path(payload)
+            return
+
+        if path == "/api/apply_motion_path":
+            self._handle_apply_motion_path(payload)
+            return
+
         # Restore backup
         if path == "/api/restore_backup":
             folder_name = payload.get("folder_name", "")
@@ -702,6 +711,104 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 500)
 
+    @staticmethod
+    def _parse_path_points(raw_points: Any) -> List[tuple]:
+        """[[x, y, t], ...] from the client -> list of float tuples (CapCut position units, seconds)."""
+        points = []
+        for p in raw_points or []:
+            if isinstance(p, (list, tuple)) and len(p) >= 3:
+                points.append((float(p[0]), float(p[1]), float(p[2])))
+        return points
+
+    def _handle_smooth_path(self, payload: Dict[str, Any]):
+        """Returns the smoothed version of a stroke so the UI can preview exactly what will be applied."""
+        try:
+            points = self._parse_path_points(payload.get("points"))
+            smoothed = KeyframeEngine.smooth_motion_path(
+                points,
+                smoothing=float(payload.get("smoothing", 0.5)),
+                aspect=float(payload.get("aspect", 9 / 16.0))
+            )
+            # When centring, also report the shift so the UI can move the raw stroke with it
+            offset = [0.0, 0.0]
+            if payload.get("center", True) and smoothed:
+                centered = KeyframeEngine.center_path(smoothed)
+                offset = [centered[0][0] - smoothed[0][0], centered[0][1] - smoothed[0][1]]
+                smoothed = centered
+            self._send_json({
+                "status": "success",
+                "points": [[round(x, 4), round(y, 4)] for x, y, _ in smoothed],
+                "offset": [round(offset[0], 4), round(offset[1], 4)]
+            })
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 400)
+
+    def _handle_apply_motion_path(self, payload: Dict[str, Any]):
+        folder_name = payload.get("folder_name", "")
+        targets = payload.get("targets", [])
+        smoothing = float(payload.get("smoothing", 0.5))
+        timing = payload.get("timing", "auto")
+        if timing not in ("auto", "ease", "constant", "drawn"):
+            timing = "auto"
+        center_on_clip = bool(payload.get("center", True))
+
+        try:
+            points = self._parse_path_points(payload.get("points"))
+            if len(points) < 2:
+                raise ValueError("Chưa có nét vẽ. Hãy kéo chuột vẽ đường đi trên màn hình preview.")
+
+            project_path = os.path.join(adapter.draft_dir, folder_name)
+            info_file = os.path.join(project_path, "draft_info.json")
+            if not os.path.exists(info_file):
+                info_file = os.path.join(project_path, "draft_content.json")
+
+            with open(info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            canvas_cfg = data.get("canvas_config", {})
+            aspect = (canvas_cfg.get("width") or 1080) / float(canvas_cfg.get("height") or 1920)
+            fps = int(data.get("fps", 30) or 30)
+            tracks = data.get("tracks", [])
+            modified_count, kf_count = 0, 0
+
+            for target in targets:
+                t_idx = target.get("track_index")
+                s_idx = target.get("segment_index")
+                if t_idx is None or s_idx is None or t_idx >= len(tracks):
+                    continue
+                segs = tracks[t_idx].get("segments", [])
+                if s_idx >= len(segs):
+                    continue
+
+                seg = segs[s_idx]
+                dur_us = seg.get("target_timerange", {}).get("duration", 0)
+                if dur_us <= 0:
+                    continue
+                # Centre the path on the clip's own resting position (CapCut clip.transform)
+                center = None
+                if center_on_clip:
+                    transform = (seg.get("clip") or {}).get("transform") or {}
+                    center = (float(transform.get("x", 0.0)), float(transform.get("y", 0.0)))
+                groups = KeyframeEngine.generate_motion_path_keyframes(
+                    points, dur_us, fps=fps, smoothing=smoothing, timing=timing, aspect=aspect, center=center
+                )
+                self._apply_groups_to_segment(seg, groups, replace_existing=True)
+                modified_count += 1
+                kf_count = len(groups[0]["keyframe_list"])
+
+            if modified_count == 0:
+                raise ValueError("Không có clip hợp lệ nào được chọn.")
+
+            adapter.save_project_data(folder_name, data)
+            self._send_json({
+                "status": "success",
+                "message": f"Đã tạo {kf_count} keyframe vị trí theo đường vẽ cho {modified_count} clip."
+            })
+        except ValueError as e:
+            self._send_json({"status": "error", "message": str(e)}, 400)
+        except Exception as e:
+            self._send_json({"status": "error", "message": str(e)}, 500)
+
     def _apply_groups_to_segment(self, seg: Dict[str, Any], new_groups: List[Dict[str, Any]], replace_existing: bool):
         existing_groups = seg.get("common_keyframes", []) or []
         if replace_existing:
@@ -942,22 +1049,8 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 else:
                     speed_mat = SpeedRampEngine.preset_hero()
 
-                # Add speed object to materials.speeds
-                data["materials"]["speeds"].append(speed_mat)
-
-                # Update segment references and timing
-                seg["speed"] = speed_mat["speed"]
-                if "extra_material_refs" not in seg:
-                    seg["extra_material_refs"] = []
-                # Remove existing speed refs from extra_material_refs
-                existing_speed_ids = {s.get("id") for s in data["materials"]["speeds"]}
-                seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in existing_speed_ids]
-                seg["extra_material_refs"].append(speed_mat["id"])
-
-                # Update target duration: target_duration = int(source_duration / effective_speed)
-                new_target_dur = int(src_dur / speed_mat["speed"])
-                if "target_timerange" in seg:
-                    seg["target_timerange"]["duration"] = new_target_dur
+                # Attach speed material, recompute duration and ripple later clips on the track
+                SpeedRampEngine.apply_speed_material(data, track, s_idx, speed_mat)
 
                 modified_count += 1
 
@@ -991,17 +1084,10 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 if t_idx is None or s_idx is None or t_idx >= len(tracks):
                     continue
 
-                seg = tracks[t_idx]["segments"][s_idx]
-                src_dur = seg.get("source_timerange", {}).get("duration", 3_000_000)
-
-                seg["speed"] = 1.0
-                if "target_timerange" in seg:
-                    seg["target_timerange"]["duration"] = src_dur
-
-                # Remove speed references
-                all_speeds = {s.get("id") for s in data.get("materials", {}).get("speeds", [])}
-                if "extra_material_refs" in seg:
-                    seg["extra_material_refs"] = [r for r in seg["extra_material_refs"] if r not in all_speeds]
+                track = tracks[t_idx]
+                if s_idx >= len(track.get("segments", [])):
+                    continue
+                SpeedRampEngine.reset_segment_speed(data, track, s_idx)
 
                 modified_count += 1
 

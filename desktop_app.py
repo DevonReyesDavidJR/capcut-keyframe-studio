@@ -42,6 +42,7 @@ from core.capcut_adapter import CapCutAdapter
 from core.keyframe_engine import KeyframeEngine
 from core.speed_ramp_engine import SpeedRampEngine
 from core.stabilizer_engine import StabilizerEngine
+from core.audio_analyzer import AudioAnalyzer
 
 # ==============================================================================
 # PROFESSIONAL CAPCUT DARK PALETTE
@@ -124,7 +125,15 @@ class RoundedButton(tk.Canvas):
         self.command = command
         self.variant = variant
         self.is_hovered = False
+        self._apply_variant_colors(variant)
 
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+        self._draw()
+
+    def _apply_variant_colors(self, variant: str):
         if variant == "primary":
             self.bg_color = THEME["accent_cyan"]
             self.hover_color = "#38ef7d"
@@ -137,23 +146,15 @@ class RoundedButton(tk.Canvas):
             self.bg_color = "#1e293b"
             self.hover_color = THEME["accent_blue"]
             self.text_color = "#ffffff"
-
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", self._on_click)
-
-        self._draw()
+        elif variant == "warning":
+            self.bg_color = THEME["accent_yellow"]
+            self.text_color = "#000000"
 
     def set_text(self, text: str, variant: Optional[str] = None):
         self.btn_text = text
         if variant:
             self.variant = variant
-            if variant == "primary":
-                self.bg_color = THEME["accent_cyan"]
-                self.text_color = "#000000"
-            elif variant == "warning":
-                self.bg_color = THEME["accent_yellow"]
-                self.text_color = "#000000"
+            self._apply_variant_colors(variant)
         self._draw()
 
     def _draw(self):
@@ -526,6 +527,12 @@ class CapCutStudioDesktopApp:
         self.play_timer_id = None
         self.selected_layer_id: Optional[str] = None
         self.layer_visibility: Dict[str, bool] = {}
+        # Clips picked on the timeline as (track_index, segment_index); empty = use track scope
+        self.selected_segments: set = set()
+        # Hand-drawn motion path: raw stroke as (x, y, t) in CapCut position units
+        self.path_draw_mode: bool = False
+        self.path_points: List[Tuple[float, float, float]] = []
+        self.vp_rect: Tuple[int, int, int, int] = (0, 0, 1, 1)  # x0, y0, w, h of the phone screen on preview_canvas
 
         # Viewport display buffer
         self.current_photo_image: Optional[ImageTk.PhotoImage] = None
@@ -686,6 +693,11 @@ class CapCutStudioDesktopApp:
         self.notebook.add(tab_rhythm, text="⚡ Nhịp Chuyển Động")
         self._build_tab_rhythm(tab_rhythm)
 
+        # Tab 1b: Hand-drawn motion path
+        tab_path = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(tab_path, text="✏️ Vẽ Đường Đi")
+        self._build_tab_motion_path(tab_path)
+
         # Tab 2: Speed Ramping Master
         tab_speed = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(tab_speed, text="🏎️ Speed Ramp")
@@ -805,6 +817,223 @@ class CapCutStudioDesktopApp:
             command=self._clear_keyframes_on_track
         )
         btn_clear.pack(fill="x", pady=4)
+
+    def _build_tab_motion_path(self, parent):
+        info_box = tk.Frame(parent, bg=THEME["bg_card"], padx=12, pady=10, highlightbackground=THEME["border"], highlightthickness=1)
+        info_box.pack(fill="x", pady=6)
+        tk.Label(info_box, text="✏️ VẼ ĐƯỜNG ĐI CHO SHOT (MOTION PATH)", bg=THEME["bg_card"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold")).pack(anchor="w")
+        steps = (
+            "1. Click chọn clip trên timeline (Shift+Click để chọn nhiều).\n"
+            "2. Bấm 'Bắt Đầu Vẽ' rồi giữ chuột kéo trên màn hình preview\n"
+            "    để vẽ đường đi của tâm clip (từ điểm đầu đến điểm cuối).\n"
+            "3. Kéo thanh 'Độ mượt' - đường xanh là đường sẽ được dùng.\n"
+            "4. Bấm 'Áp Dụng'. Clip chạy hết đường vẽ từ frame đầu đến\n"
+            "    frame cuối, tốc độ tự điều chỉnh theo độ cong."
+        )
+        tk.Label(info_box, text=steps, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), justify="left").pack(anchor="w", pady=4)
+
+        group_opt = tk.LabelFrame(parent, text="⚙️ TÙY CHỈNH", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
+        group_opt.pack(fill="x", pady=6)
+
+        row1 = tk.Frame(group_opt, bg=THEME["bg_panel"])
+        row1.pack(fill="x", pady=4)
+        tk.Label(row1, text="Độ mượt:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
+        self.path_smooth_scale = tk.Scale(
+            row1, from_=0, to=100, orient="horizontal", length=220, showvalue=True,
+            bg=THEME["bg_panel"], fg=THEME["text_main"], highlightthickness=0, troughcolor=THEME["bg_card"],
+            command=lambda v: self._draw_path_overlay()
+        )
+        self.path_smooth_scale.set(50)
+        self.path_smooth_scale.pack(side="left", padx=4)
+
+        row2 = tk.Frame(group_opt, bg=THEME["bg_panel"])
+        row2.pack(fill="x", pady=4)
+        tk.Label(row2, text="Nhịp chạy:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
+        self.path_timing_combo = ttk.Combobox(row2, state="readonly", width=30)
+        self.path_timing_combo["values"] = [
+            "Tự động (chậm ở khúc cua, mượt đầu & cuối)",
+            "Mượt đầu & cuối (Ease In-Out)",
+            "Tốc độ đều suốt đường",
+            "Theo tốc độ vẽ tay"
+        ]
+        self.path_timing_combo.current(0)
+        self.path_timing_combo.pack(side="left", padx=4)
+
+        self.path_center_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            group_opt, text="Đặt đường đi vào giữa khung hình", variable=self.path_center_var,
+            bg=THEME["bg_panel"], fg=THEME["text_main"], selectcolor=THEME["bg_card"],
+            activebackground=THEME["bg_panel"], command=self._draw_path_overlay
+        ).pack(anchor="w", pady=(6, 0))
+
+        self.lbl_path_status = tk.Label(group_opt, text="Chưa có nét vẽ.", bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), anchor="w")
+        self.lbl_path_status.pack(fill="x", pady=(6, 0))
+
+        btn_box = tk.Frame(parent, bg=THEME["bg_panel"])
+        btn_box.pack(fill="x", pady=8)
+        self.btn_path_draw = RoundedButton(btn_box, text="✏️ Bắt Đầu Vẽ", width=150, height=34, variant="action", command=self._toggle_path_draw_mode)
+        self.btn_path_draw.pack(side="left", padx=4)
+        RoundedButton(btn_box, text="🗑️ Xóa Nét Vẽ", width=130, height=34, command=self._clear_motion_path).pack(side="left", padx=4)
+
+        RoundedButton(
+            parent,
+            text="🚀 ÁP DỤNG ĐƯỜNG ĐI CHO CLIP ĐÃ CHỌN (TỰ ĐỘNG SAO LƯU)",
+            width=380,
+            height=38,
+            variant="primary",
+            command=self._apply_motion_path
+        ).pack(fill="x", pady=4)
+
+    def _toggle_path_draw_mode(self):
+        self.path_draw_mode = not self.path_draw_mode
+        if self.path_draw_mode:
+            if self.is_playing:
+                self._toggle_playback()
+            self.btn_path_draw.set_text("⏹️ Dừng Vẽ", "danger")
+            self.preview_canvas.config(cursor="pencil")
+            self.lbl_path_status.config(text="Đang ở chế độ vẽ: giữ chuột và kéo trên màn hình preview.")
+        else:
+            self.btn_path_draw.set_text("✏️ Bắt Đầu Vẽ", "action")
+            self.preview_canvas.config(cursor="")
+            self._update_path_status()
+
+    def _canvas_to_capcut(self, px: float, py: float) -> Tuple[float, float]:
+        """Preview canvas pixel -> CapCut position units (0 = center, +-1 = screen edge, +y = up)."""
+        vx0, vy0, vw, vh = self.vp_rect
+        return ((px - vx0 - vw / 2.0) / (vw / 2.0), -(py - vy0 - vh / 2.0) / (vh / 2.0))
+
+    def _capcut_to_canvas(self, x: float, y: float) -> Tuple[float, float]:
+        vx0, vy0, vw, vh = self.vp_rect
+        return (vx0 + vw / 2.0 + x * vw / 2.0, vy0 + vh / 2.0 - y * vh / 2.0)
+
+    def _on_path_press(self, event):
+        if not self.path_draw_mode:
+            return
+        x, y = self._canvas_to_capcut(event.x, event.y)
+        self.path_points = [(x, y, time.monotonic())]
+        self._draw_path_overlay()
+
+    def _on_path_drag(self, event):
+        if not self.path_draw_mode or not self.path_points:
+            return
+        x, y = self._canvas_to_capcut(event.x, event.y)
+        self.path_points.append((x, y, time.monotonic()))
+        lx, ly = self._capcut_to_canvas(*self.path_points[-2][:2])
+        # Draw the live stroke incrementally; the full overlay is redrawn on release
+        self.preview_canvas.create_line(lx, ly, event.x, event.y, fill="#9ca3af", width=2, tags="path_overlay")
+
+    def _on_path_release(self, event):
+        if not self.path_draw_mode:
+            return
+        self._draw_path_overlay()
+        self._update_path_status()
+
+    def _clear_motion_path(self):
+        self.path_points = []
+        self._draw_path_overlay()
+        self._update_path_status()
+
+    def _path_aspect(self) -> float:
+        if not self.current_project:
+            return 9 / 16.0
+        return (self.current_project.get("canvas_width") or 1080) / float(self.current_project.get("canvas_height") or 1920)
+
+    def _draw_path_overlay(self):
+        """Raw stroke in grey, the smoothed path that will be applied in cyan, start/end markers."""
+        if not hasattr(self, "preview_canvas"):
+            return
+        self.preview_canvas.delete("path_overlay")
+        if len(self.path_points) < 2:
+            return
+        smooth = KeyframeEngine.smooth_motion_path(self.path_points, self.path_smooth_scale.get() / 100.0, self._path_aspect())
+        dx = dy = 0.0
+        if self.path_center_var.get() and smooth:
+            centered = KeyframeEngine.center_path(smooth)
+            dx, dy = centered[0][0] - smooth[0][0], centered[0][1] - smooth[0][1]
+            smooth = centered
+
+        # Raw stroke moved by the same shift, so it lines up with the path that will be used
+        raw = [c for p in self.path_points for c in self._capcut_to_canvas(p[0] + dx, p[1] + dy)]
+        self.preview_canvas.create_line(*raw, fill="#6b7280", width=1, dash=(3, 3), tags="path_overlay")
+
+        if len(smooth) >= 2:
+            flat = [c for p in smooth for c in self._capcut_to_canvas(p[0], p[1])]
+            self.preview_canvas.create_line(*flat, fill=THEME["accent_cyan"], width=3, smooth=True, tags="path_overlay")
+            ex, ey = flat[-2], flat[-1]
+            sx, sy = flat[0], flat[1]
+            self.preview_canvas.create_oval(sx - 6, sy - 6, sx + 6, sy + 6, fill=THEME["accent_green"], outline="#000", tags="path_overlay")
+            self.preview_canvas.create_oval(ex - 6, ey - 6, ex + 6, ey + 6, fill=THEME["accent_red"], outline="#000", tags="path_overlay")
+
+    def _update_path_status(self):
+        if len(self.path_points) < 2:
+            self.lbl_path_status.config(text="Chưa có nét vẽ.")
+            return
+        sx, sy = self.path_points[0][:2]
+        ex, ey = self.path_points[-1][:2]
+        self.lbl_path_status.config(
+            text=f"Nét vẽ: {len(self.path_points)} điểm  |  🟢 ({sx:+.2f}, {sy:+.2f})  →  🔴 ({ex:+.2f}, {ey:+.2f})"
+        )
+
+    def _apply_motion_path(self):
+        if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
+            return
+        if len(self.path_points) < 2:
+            messagebox.showwarning("Chú ý", "Chưa có nét vẽ. Bấm 'Bắt Đầu Vẽ' rồi kéo chuột trên màn hình preview.")
+            return
+
+        info_file = self.current_project.get("info_file")
+        with open(info_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        targets = self._resolve_target_clips(data, "Vẽ đường đi")
+        if not targets:
+            return
+
+        timing = {0: "auto", 1: "ease", 2: "constant", 3: "drawn"}.get(self.path_timing_combo.current(), "auto")
+        fps = int(data.get("fps", 30) or 30)
+        tracks = data.get("tracks", [])
+        applied, kf_count = 0, 0
+        try:
+            for t_idx, s_idx in targets:
+                seg = tracks[t_idx]["segments"][s_idx]
+                du_us = seg.get("target_timerange", {}).get("duration", 0)
+                if du_us <= 0:
+                    continue
+                # Centre on the clip's own resting position (CapCut clip.transform)
+                center = None
+                if self.path_center_var.get():
+                    transform = (seg.get("clip") or {}).get("transform") or {}
+                    center = (float(transform.get("x", 0.0)), float(transform.get("y", 0.0)))
+                groups = KeyframeEngine.generate_motion_path_keyframes(
+                    self.path_points, du_us, fps=fps,
+                    smoothing=self.path_smooth_scale.get() / 100.0,
+                    timing=timing, aspect=self._path_aspect(), center=center
+                )
+                self._merge_keyframe_groups(seg, groups)
+                applied += 1
+                kf_count = len(groups[0]["keyframe_list"])
+        except ValueError as e:
+            messagebox.showwarning("Chú ý", str(e))
+            return
+
+        if applied == 0:
+            return
+        self.adapter.save_project_data(self.current_project_folder, data)
+        if self.path_draw_mode:
+            self._toggle_path_draw_mode()
+        self._load_project_by_index(self.proj_combo.current())
+        # Jump to the start of the first target clip so Space plays the new motion right away
+        first = self.current_project["tracks"][targets[0][0]]["segments"][targets[0][1]]
+        self.current_time_sec = first.get("start_seconds", 0.0)
+        self.scrubber.set_time(self.current_time_sec)
+        self._render_current_frame()
+        self._draw_timeline()
+        messagebox.showinfo(
+            "Thành Công",
+            f"Đã tạo {kf_count} keyframe vị trí theo đường vẽ cho {applied} clip!\n"
+            f"Bấm Space để xem thử. Bản sao lưu đã được tự động lưu."
+        )
 
     def _build_tab_speed(self, parent):
         group_presets = tk.LabelFrame(parent, text="🏎️ CÁC MẪU UỐN TỐC ĐỘ (SPEED CURVE PRESETS)", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 10, "bold"), padx=10, pady=8)
@@ -1016,6 +1245,9 @@ class CapCutStudioDesktopApp:
         )
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", lambda e: self._render_current_frame())
+        self.preview_canvas.bind("<ButtonPress-1>", self._on_path_press)
+        self.preview_canvas.bind("<B1-Motion>", self._on_path_drag)
+        self.preview_canvas.bind("<ButtonRelease-1>", self._on_path_release)
 
         # Transport Controls Bar
         ctrl_bar = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=4)
@@ -1094,7 +1326,7 @@ class CapCutStudioDesktopApp:
 
         tk.Label(
             tl_header,
-            text="🎞️ DÒNG THỜI GIAN ĐA TRACK (VISUAL TIMELINE) - ◆ KIM CƯƠNG KEYFRAME",
+            text="🎞️ DÒNG THỜI GIAN ĐA TRACK - ◆ KEYFRAME  |  Click clip để chọn, Shift+Click chọn nhiều, click vùng trống để bỏ chọn",
             bg=THEME["bg_header"],
             fg=THEME["accent_cyan"],
             font=(FONT_FAMILY, 9, "bold")
@@ -1103,7 +1335,8 @@ class CapCutStudioDesktopApp:
         self.timeline_canvas = tk.Canvas(timeline_frame, bg=THEME["timeline_bg"], height=128, highlightthickness=0)
         self.timeline_canvas.pack(side="top", fill="both", expand=True)
         self.timeline_canvas.bind("<Configure>", lambda e: self._draw_timeline())
-        self.timeline_canvas.bind("<Button-1>", self._on_timeline_click)
+        self.timeline_canvas.bind("<Button-1>", self._on_timeline_press)
+        self.timeline_canvas.bind("<Shift-Button-1>", lambda e: self._on_timeline_press(e, additive=True))
         self.timeline_canvas.bind("<B1-Motion>", self._on_timeline_click)
 
     def _bind_keyboard_shortcuts(self):
@@ -1153,6 +1386,7 @@ class CapCutStudioDesktopApp:
             self._refresh_projects()
 
     def _on_project_selected(self, event=None):
+        self.selected_segments.clear()
         idx = self.proj_combo.current()
         if 0 <= idx < len(self.projects_list):
             self._load_project_by_index(idx)
@@ -1318,6 +1552,7 @@ class CapCutStudioDesktopApp:
         vy0 = (ch - vp_h) // 2
         vx1 = vx0 + vp_w
         vy1 = vy0 + vp_h
+        self.vp_rect = (vx0, vy0, vp_w, vp_h)
 
         # Collect active layers at current time
         t_sec = self.current_time_sec
@@ -1382,6 +1617,8 @@ class CapCutStudioDesktopApp:
 
         # Bottom-left layers active badge inside viewport
         self.preview_canvas.create_text(vx0 + 10, vy1 - 15, text=f"{len(active_layers)} Layers", fill=THEME["text_muted"], font=(FONT_FAMILY, 8, "bold"), anchor="w")
+
+        self._draw_path_overlay()
 
     def _on_layer_tree_click(self, event):
         item = self.layer_tree.identify_row(event.y)
@@ -1463,9 +1700,12 @@ class CapCutStudioDesktopApp:
                 if seg.get("file_path", "").lower().endswith((".png", ".jpg", ".jpeg")):
                     fill_col = THEME["clip_image"]
 
+                is_selected = (t_idx, seg.get("index")) in self.selected_segments
                 self.timeline_canvas.create_rectangle(
                     x0, clip_y0, x1, clip_y1,
-                    fill=fill_col, outline="#3b82f6", width=1
+                    fill=fill_col,
+                    outline=THEME["accent_yellow"] if is_selected else "#3b82f6",
+                    width=3 if is_selected else 1
                 )
 
                 cname = seg.get("name", "")
@@ -1499,6 +1739,86 @@ class CapCutStudioDesktopApp:
             fill=THEME["accent_red"]
         )
 
+    def _on_timeline_press(self, event, additive: bool = False):
+        """Selects the clip under the cursor (Shift = toggle multi-select), then seeks."""
+        hit = self._timeline_hit_test(event.x, event.y)
+        if hit is None:
+            if not additive:
+                self.selected_segments.clear()
+        elif additive:
+            self.selected_segments.symmetric_difference_update({hit})
+        else:
+            self.selected_segments = {hit}
+        self._on_timeline_click(event)
+
+    def _timeline_hit_test(self, x: int, y: int) -> Optional[Tuple[int, int]]:
+        """Returns (track_index, segment_index) of the clip at canvas point (x, y), mirroring _draw_timeline."""
+        if not self.current_project:
+            return None
+        w = self.timeline_canvas.winfo_width() or 800
+        h = self.timeline_canvas.winfo_height() or 128
+        dur = self.current_project.get("duration_seconds", 0.0)
+        tracks = self.current_project.get("tracks", [])
+        if dur <= 0 or not tracks:
+            return None
+        margin_left, margin_right, ruler_h = 60, 20, 22
+        usable_w = w - margin_left - margin_right
+        num_tracks = min(4, len(tracks))
+        track_row_h = (h - ruler_h) // max(1, num_tracks)
+        row = (y - ruler_h) // max(1, track_row_h)
+        if y < ruler_h or not (0 <= row < num_tracks):
+            return None
+        track = tracks[row]
+        t_sec = (x - margin_left) / float(usable_w) * dur
+        for seg in track.get("segments", []):
+            if seg.get("start_seconds", 0.0) <= t_sec <= seg.get("end_seconds", 0.0):
+                return (track.get("index", row), seg.get("index"))
+        return None
+
+    def _resolve_target_clips(self, data: Dict[str, Any], action_label: str) -> List[Tuple[int, int]]:
+        """
+        Clips an action applies to: the timeline selection if any, otherwise every video clip
+        in the chosen track scope after the user confirms. Returns [] when cancelled.
+        """
+        tracks = data.get("tracks", [])
+        if self.selected_segments:
+            picked = sorted(
+                (t, s) for t, s in self.selected_segments
+                if t < len(tracks) and tracks[t].get("type") == "video" and s < len(tracks[t].get("segments", []))
+            )
+            if not picked:
+                messagebox.showwarning("Chú ý", "Các clip đang chọn không phải clip video. Hãy chọn clip trên track video (V).")
+            return picked
+
+        target_choice = self.rhythm_track_combo.get()
+        targets = []
+        for t_idx, track in enumerate(tracks):
+            if track.get("type") != "video":
+                continue
+            if "Track 0" in target_choice and t_idx != 0:
+                continue
+            if "Track 1" in target_choice and t_idx != 1:
+                continue
+            targets.extend((t_idx, s_idx) for s_idx in range(len(track.get("segments", []))))
+
+        if not targets:
+            return []
+        if not messagebox.askyesno(
+            "Xác nhận phạm vi",
+            f"Chưa chọn clip nào trên timeline.\n"
+            f"Áp dụng '{action_label}' cho TẤT CẢ {len(targets)} clip video ({target_choice})?\n\n"
+            f"Mẹo: click vào clip trên timeline để chỉ áp dụng cho clip đó."
+        ):
+            return []
+        return targets
+
+    @staticmethod
+    def _merge_keyframe_groups(seg: Dict[str, Any], new_groups: List[Dict[str, Any]]) -> None:
+        """Replaces only the properties the preset animates; other existing keyframes are kept."""
+        new_props = {g.get("property_type") for g in new_groups}
+        kept = [g for g in (seg.get("common_keyframes") or []) if g.get("property_type") not in new_props]
+        seg["common_keyframes"] = kept + new_groups
+
     def _on_timeline_click(self, event):
         if not self.current_project:
             return
@@ -1531,41 +1851,41 @@ class CapCutStudioDesktopApp:
         with open(info_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        scale_peak = float(self.spin_scale_peak.get() or 1.25)
-        target_choice = self.rhythm_track_combo.get()
+        try:
+            scale_peak = float(self.spin_scale_peak.get() or 1.25)
+        except ValueError:
+            scale_peak = 1.25
+
+        targets = self._resolve_target_clips(data, preset_code)
+        if not targets:
+            return
+
+        tracks = data.get("tracks", [])
         applied_count = 0
-
-        for t_idx, track in enumerate(data.get("tracks", [])):
-            if track.get("type") != "video":
-                continue
-            if "Track 0" in target_choice and t_idx != 0:
-                continue
-            if "Track 1" in target_choice and t_idx != 1:
+        for order, (t_idx, s_idx) in enumerate(targets):
+            seg = tracks[t_idx]["segments"][s_idx]
+            du_us = seg.get("target_timerange", {}).get("duration", 0)
+            if du_us <= 0:
                 continue
 
-            for s_idx, seg in enumerate(track.get("segments", [])):
-                du_us = seg.get("target_timerange", {}).get("duration", 0)
-                if du_us <= 0:
-                    continue
+            new_kfs = []
+            if preset_code == "switch_in_out":
+                direction = "up" if order % 2 == 0 else "down"
+                new_kfs = KeyframeEngine.preset_rhythmic_switch_entrance(du_us, direction=direction, transition_duration_ms=220)
+            elif preset_code == "pulse_1s":
+                new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=1.0, motion_type="bounce", bounce_scale=scale_peak)
+            elif preset_code == "pulse_2s":
+                new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=2.0, motion_type="bounce", bounce_scale=scale_peak)
+            elif preset_code == "bounce":
+                new_kfs = KeyframeEngine.preset_elastic_bounce(du_us, peak_scale=scale_peak)
+            elif preset_code == "punch_zoom":
+                new_kfs = KeyframeEngine.preset_punch_zoom(du_us, peak_scale=scale_peak, punch_duration_ms=200)
+            elif preset_code == "shake":
+                new_kfs = KeyframeEngine.preset_camera_shake(du_us, intensity=0.03, frequency_hz=10)
 
-                new_kfs = []
-                if preset_code == "switch_in_out":
-                    direction = "up" if s_idx % 2 == 0 else "down"
-                    new_kfs = KeyframeEngine.preset_rhythmic_switch_entrance(du_us, direction=direction, transition_duration_ms=220)
-                elif preset_code == "pulse_1s":
-                    new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=1.0, motion_type="bounce", bounce_scale=scale_peak)
-                elif preset_code == "pulse_2s":
-                    new_kfs = KeyframeEngine.preset_rhythmic_pulse_step(du_us, interval_seconds=2.0, motion_type="bounce", bounce_scale=scale_peak)
-                elif preset_code == "bounce":
-                    new_kfs = KeyframeEngine.preset_bounce(du_us, bounce_scale=scale_peak, bounce_count=2)
-                elif preset_code == "punch_zoom":
-                    new_kfs = KeyframeEngine.preset_punch_zoom(du_us, peak_scale=scale_peak, punch_duration_ms=200)
-                elif preset_code == "shake":
-                    new_kfs = KeyframeEngine.preset_camera_shake(du_us, intensity=0.03, frequency_hz=10)
-
-                if new_kfs:
-                    seg["common_keyframes"] = new_kfs
-                    applied_count += 1
+            if new_kfs:
+                self._merge_keyframe_groups(seg, new_kfs)
+                applied_count += 1
 
         if applied_count > 0:
             self.adapter.save_project_data(folder, data)
@@ -1577,7 +1897,8 @@ class CapCutStudioDesktopApp:
     def _clear_keyframes_on_track(self):
         if not self.current_project or not self.current_project_folder:
             return
-        if not messagebox.askyesno("Xác nhận", "Bạn có chắc chắn muốn xóa tất cả keyframe trên track đã chọn?"):
+        scope_text = f"{len(self.selected_segments)} clip đang chọn" if self.selected_segments else "track đã chọn"
+        if not messagebox.askyesno("Xác nhận", f"Bạn có chắc chắn muốn xóa tất cả keyframe trên {scope_text}?"):
             return
 
         folder = self.current_project_folder
@@ -1590,11 +1911,14 @@ class CapCutStudioDesktopApp:
         for t_idx, track in enumerate(data.get("tracks", [])):
             if track.get("type") != "video":
                 continue
-            if "Track 0" in target_choice and t_idx != 0:
-                continue
-            if "Track 1" in target_choice and t_idx != 1:
-                continue
-            for seg in track.get("segments", []):
+            if not self.selected_segments:
+                if "Track 0" in target_choice and t_idx != 0:
+                    continue
+                if "Track 1" in target_choice and t_idx != 1:
+                    continue
+            for s_idx, seg in enumerate(track.get("segments", [])):
+                if self.selected_segments and (t_idx, s_idx) not in self.selected_segments:
+                    continue
                 if seg.get("common_keyframes"):
                     seg["common_keyframes"] = []
                     cleared += 1
@@ -1605,6 +1929,7 @@ class CapCutStudioDesktopApp:
 
     def _apply_speed_ramp(self, preset_code: str):
         if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
             return
         self._draw_speed_curve_preview(preset_code)
 
@@ -1613,62 +1938,80 @@ class CapCutStudioDesktopApp:
         with open(info_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        targets = self._resolve_target_clips(data, preset_code)
+        if not targets:
+            return
+
+        beats_us: List[int] = []
+        if preset_code == "beat_sync":
+            # 120 BPM grid = one beat every 0.5s across the whole project
+            beats_us = AudioAnalyzer.generate_bpm_beats(120.0, int(data.get("duration", 0)) or 60_000_000)
+
+        tracks = data.get("tracks", [])
         applied = 0
-        for track in data.get("tracks", []):
-            if track.get("type") != "video":
+        for t_idx, s_idx in targets:
+            track = tracks[t_idx]
+            seg = track["segments"][s_idx]
+            if preset_code == "hero_ramp":
+                speed_mat = SpeedRampEngine.preset_hero()
+            elif preset_code == "bullet_time":
+                speed_mat = SpeedRampEngine.preset_bullet_time()
+            elif preset_code == "flash_in_out":
+                speed_mat = SpeedRampEngine.preset_flash_in_out()
+            elif preset_code == "beat_sync":
+                speed_mat = SpeedRampEngine.generate_beat_speed_ramp(
+                    segment_start_us=seg.get("target_timerange", {}).get("start", 0),
+                    segment_source_duration_us=seg.get("source_timerange", {}).get("duration", 0) or seg.get("target_timerange", {}).get("duration", 0),
+                    beat_timestamps_us=beats_us
+                )
+            elif preset_code == "reset":
+                speed_mat = SpeedRampEngine.create_normal_speed_material()
+            else:
                 continue
-            for seg in track.get("segments", []):
-                du_us = seg.get("target_timerange", {}).get("duration", 0)
-                if preset_code == "hero_ramp":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_hero_ramp(du_us))
-                    applied += 1
-                elif preset_code == "bullet_time":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_bullet_time(du_us))
-                    applied += 1
-                elif preset_code == "flash_in_out":
-                    SpeedRampEngine.apply_speed_curve_to_segment(seg, SpeedRampEngine.preset_flash_in_out(du_us))
-                    applied += 1
-                elif preset_code == "reset":
-                    SpeedRampEngine.reset_segment_speed(seg)
-                    applied += 1
+            # Recomputes the clip length and ripples later clips so the track stays gap-free
+            SpeedRampEngine.apply_speed_material(data, track, s_idx, speed_mat)
+            applied += 1
 
         if applied > 0:
             self.adapter.save_project_data(folder, data)
             self._load_project_by_index(self.proj_combo.current())
-            messagebox.showinfo("Thành Công", f"Đã áp dụng uốn tốc độ '{preset_code}' vào {applied} clip!")
+            messagebox.showinfo("Thành Công", f"Đã áp dụng uốn tốc độ '{preset_code}' vào {applied} clip!\nCác clip phía sau đã được dời theo để timeline không bị hở/chồng.")
 
     def _execute_stabilizer(self):
         if not self.current_project or not self.current_project_folder:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một dự án CapCut trước.")
             return
 
-        target_video = None
-        target_seg = None
+        # Use the selected clip when there is one, otherwise the first video clip
+        candidates = []
         for track in self.current_project.get("tracks", []):
             for seg in track.get("segments", []):
-                fp = seg.get("file_path", "")
-                if fp.lower().endswith((".mp4", ".mov", ".m4v")):
-                    target_video = fp
-                    target_seg = seg
-                    break
-            if target_video:
-                break
+                if seg.get("file_path", "").lower().endswith((".mp4", ".mov", ".m4v")):
+                    candidates.append((track.get("index"), seg))
+        if self.selected_segments:
+            candidates = [(t, s) for t, s in candidates if (t, s.get("index")) in self.selected_segments]
 
-        if not target_video:
-            messagebox.showinfo("Thông Báo", "Dự án hiện tại là đồ họa/ảnh PNG.\nTính năng chống rung khóa mốc áp dụng tốt nhất cho video quay thực tế.")
+        if not candidates:
+            messagebox.showinfo("Thông Báo", "Không tìm thấy clip video (.mp4/.mov) phù hợp.\nHãy click chọn 1 clip video trên timeline.")
             return
+        _, target_seg = candidates[0]
 
         try:
             mode = "dead_lock" if "Khóa Mốc" in self.stab_mode_combo.get() else "smooth"
             zoom_val = float(self.stab_zoom_combo.get().replace("x", ""))
 
-            engine = StabilizerEngine()
-            kfs = engine.stabilize_video_clip(
-                target_video,
-                target_seg.get("start_seconds", 0.0),
-                target_seg.get("duration_seconds", 0.0),
-                mode=mode,
-                auto_zoom=zoom_val
+            self.root.config(cursor="watch")
+            self.root.update_idletasks()
+            result = StabilizerEngine.track_and_stabilize(
+                video_path=target_seg.get("file_path"),
+                start_seconds=target_seg.get("source_start_seconds", 0.0),
+                duration_seconds=target_seg.get("source_duration_seconds") or target_seg.get("duration_seconds", 0.0),
+                stabilize_mode=mode,
+                min_zoom=zoom_val,
+                fps=int(self.current_project.get("fps", 30) or 30)
             )
+            if result.get("status") != "success":
+                raise RuntimeError(result.get("message", "Không rõ lỗi"))
 
             info_file = self.current_project.get("info_file")
             with open(info_file, "r", encoding="utf-8") as f:
@@ -1677,14 +2020,16 @@ class CapCutStudioDesktopApp:
             for track in data.get("tracks", []):
                 for s in track.get("segments", []):
                     if s.get("id") == target_seg.get("id"):
-                        s["common_keyframes"] = kfs
+                        self._merge_keyframe_groups(s, result["keyframes"])
                         break
 
             self.adapter.save_project_data(self.current_project_folder, data)
             self._load_project_by_index(self.proj_combo.current())
-            messagebox.showinfo("Thành Công", f"Đã tạo keyframe chống rung khóa mốc (Auto-Zoom {zoom_val}x)!")
+            messagebox.showinfo("Thành Công", f"Đã tạo keyframe chống rung cho '{target_seg.get('name')}' (Auto-Zoom {result.get('auto_zoom')}x)!")
         except Exception as e:
             messagebox.showerror("Lỗi Chống Rung", f"Không thể thực thi:\n{e}")
+        finally:
+            self.root.config(cursor="")
 
     def _analyze_video_rhythm(self):
         if not self.current_project:
@@ -1758,7 +2103,7 @@ class CapCutStudioDesktopApp:
             messagebox.showerror("Lỗi", f"Không thể xuất file filmstrip tổng:\n{e}")
 
     def _show_backup_tab(self):
-        self.notebook.select(4)
+        self.notebook.select(5)
 
     def _create_manual_backup(self):
         if not self.current_project_folder:
