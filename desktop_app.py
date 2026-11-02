@@ -715,9 +715,9 @@ class CapCutStudioDesktopApp:
 
     def _build_tab_rhythm(self, parent):
         tk.Label(parent, text="Chuyển động", bg=THEME["bg_panel"], fg=THEME["text_main"],
-                 font=(FONT_FAMILY, 15, "bold")).pack(anchor="w", pady=(8, 4))
+                 font=(FONT_FAMILY, 14, "bold")).pack(anchor="w", pady=(2, 4))
         tk.Label(parent, text="Chọn hiệu ứng, kiểm tra phạm vi rồi áp dụng.",
-                 bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 10)).pack(anchor="w", pady=(0, 18))
+                 bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 10)).pack(anchor="w", pady=(0, 10))
         actions = tk.Frame(parent, bg=THEME["bg_panel"])
         actions.pack(side="bottom", fill="x", pady=(8, 0))
         self.selected_rhythm = tk.StringVar(value="pulse_1s")
@@ -748,7 +748,7 @@ class CapCutStudioDesktopApp:
             ("Punch zoom", "punch_zoom"), ("Rung nhẹ", "shake"),
         ]
         for idx, (title, code) in enumerate(presets):
-            button = RoundedButton(grid, text=title, height=44, width=160,
+            button = RoundedButton(grid, text=title, height=36, width=160,
                                    command=lambda value=code: self._select_rhythm(value))
             button.grid(row=idx // 2, column=idx % 2, sticky="ew", padx=4, pady=4)
             self.rhythm_buttons[code] = (button, title)
@@ -958,108 +958,53 @@ class CapCutStudioDesktopApp:
     # RIGHT STUDIO MONITOR & ACTIVE LAYERS INSPECTOR
     # --------------------------------------------------------------------------
     def _build_studio_monitor(self):
-        # Header of monitor
-        top_ctrl = tk.Frame(self.right_panel, bg=THEME["bg_panel"])
-        top_ctrl.pack(side="top", fill="x", pady=(0, 4))
-
-        tk.Label(
-            top_ctrl,
-            text="Xem trước dự án",
-            bg=THEME["bg_panel"],
-            fg=THEME["accent_cyan"],
-            font=(FONT_FAMILY, 11, "bold")
-        ).pack(side="left")
-
-        self.lbl_viewport_info = tk.Label(
-            top_ctrl,
-            text="1080×1920 (9:16)",
-            bg=THEME["bg_card"],
-            fg=THEME["accent_green"],
-            font=(FONT_FAMILY, 9, "bold"),
-            padx=8,
-            pady=2
-        )
+        top = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=6)
+        top.pack(side="top", fill="x")
+        tk.Label(top, text="Xem trước dự án", bg=THEME["bg_panel"], fg=THEME["text_main"],
+                 font=(FONT_FAMILY, 11, "bold")).pack(side="left")
+        self.lbl_viewport_info = tk.Label(top, text="1080 × 1920", bg=THEME["bg_panel"],
+                                          fg=THEME["text_muted"], font=(FONT_FAMILY, 9))
         self.lbl_viewport_info.pack(side="right")
-
-        # Phone Bezel Mockup Container (Zero-leakage Canvas)
-        bezel_frame = tk.Frame(self.right_panel, bg="#08090d", highlightbackground="#222634", highlightthickness=1)
-        bezel_frame.pack(side="top", fill="both", expand=True, padx=4, pady=2)
-
-        self.preview_canvas = tk.Canvas(
-            bezel_frame,
-            bg="#08090d",
-            highlightthickness=0
-        )
+        # Reserve the inspector and transport before the expanding preview.
+        layer_box = StudioGroup(self.right_panel, text="LAYER  /  Nhấn cột Hiện để bật, tắt",
+                                bg=THEME["bg_panel"], padx=4, pady=4)
+        layer_box.pack(side="bottom", fill="x")
+        self.layer_tree = ttk.Treeview(layer_box,
+            columns=("visible", "track", "name", "scale", "position", "status"), show="headings", height=3)
+        for name, title, width in [
+            ("visible", "Hiện", 40), ("track", "Track", 44), ("name", "Tên clip", 150),
+            ("scale", "Scale", 60), ("position", "Vị trí", 92), ("status", "Trạng thái", 90)]:
+            self.layer_tree.heading(name, text=title)
+            self.layer_tree.column(name, width=width, minwidth=35, stretch=(name == "name"),
+                                   anchor="w" if name == "name" else "center")
+        scroll = ttk.Scrollbar(layer_box, orient="vertical", command=self.layer_tree.yview)
+        scroll.pack(side="right", fill="y")
+        self.layer_tree.configure(yscrollcommand=scroll.set)
+        self.layer_tree.pack(side="left", fill="both", expand=True)
+        self.layer_tree.bind("<ButtonRelease-1>", self._on_layer_tree_click)
+        transport = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=6)
+        transport.pack(side="bottom", fill="x")
+        ctrl = tk.Frame(transport, bg=THEME["bg_panel"])
+        ctrl.pack(fill="x")
+        for text, command in [("|◀", self._step_to_start), ("◀ 1F", self._step_prev_frame)]:
+            RoundedButton(ctrl, text=text, width=48, height=30, command=command).pack(side="left", padx=2)
+        self.btn_play = RoundedButton(ctrl, text="▶ Phát", width=80, height=30,
+                                      variant="primary", command=self._toggle_playback)
+        self.btn_play.pack(side="left", padx=4)
+        for text, command in [("1F ▶", self._step_next_frame), ("▶|", self._step_to_end)]:
+            RoundedButton(ctrl, text=text, width=48, height=30, command=command).pack(side="left", padx=2)
+        self.btn_loop = RoundedButton(ctrl, text="Lặp: BẬT", width=88, height=30, command=self._toggle_loop)
+        self.btn_loop.pack(side="left", padx=4)
+        self.lbl_timecode = tk.Label(transport, text="00:00.000 / 00:00.000", bg=THEME["bg_panel"],
+                                     fg=THEME["text_muted"], font=("Menlo", 9))
+        self.lbl_timecode.pack(fill="x", pady=(6, 0))
+        self.scrubber = ModernScrubber(transport, height=20, on_seek=self._on_scrubber_seek)
+        self.scrubber.pack(fill="x")
+        bezel = tk.Frame(self.right_panel, bg="#090b0e")
+        bezel.pack(side="top", fill="both", expand=True, pady=(4, 6))
+        self.preview_canvas = tk.Canvas(bezel, bg="#090b0e", highlightthickness=0)
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", lambda e: self._render_current_frame())
-
-        # Transport Controls Bar
-        ctrl_bar = tk.Frame(self.right_panel, bg=THEME["bg_panel"], pady=4)
-        ctrl_bar.pack(side="top", fill="x")
-
-        # Custom Vector Transport Buttons
-        btn_first = RoundedButton(ctrl_bar, text="⏮", width=42, height=30, command=self._step_to_start)
-        btn_first.pack(side="left", padx=2)
-
-        btn_prev = RoundedButton(ctrl_bar, text="◀ 1F", width=52, height=30, command=self._step_prev_frame)
-        btn_prev.pack(side="left", padx=2)
-
-        self.btn_play = RoundedButton(ctrl_bar, text="▶ PHÁT", width=90, height=30, variant="primary", command=self._toggle_playback)
-        self.btn_play.pack(side="left", padx=4)
-
-        btn_next = RoundedButton(ctrl_bar, text="1F ▶", width=52, height=30, command=self._step_next_frame)
-        btn_next.pack(side="left", padx=2)
-
-        btn_last = RoundedButton(ctrl_bar, text="⏭", width=42, height=30, command=self._step_to_end)
-        btn_last.pack(side="left", padx=2)
-
-        self.btn_loop = RoundedButton(ctrl_bar, text="🔁 Lặp: BẬT", width=85, height=30, command=self._toggle_loop)
-        self.btn_loop.pack(side="left", padx=4)
-
-        # Timecode badge
-        self.lbl_timecode = tk.Label(
-            self.right_panel,
-            text="00:00.000 / 00:00.000 (Frame 0 / 0)",
-            bg=THEME["bg_card"],
-            fg=THEME["accent_cyan"],
-            font=("Menlo", 9, "bold"),
-            padx=10,
-            pady=4
-        )
-        self.lbl_timecode.pack(side="top", anchor="e", padx=4, pady=(4, 0))
-
-        # Custom Vector Scrubber
-        self.scrubber = ModernScrubber(self.right_panel, height=22, on_seek=self._on_scrubber_seek)
-        self.scrubber.pack(side="top", fill="x", pady=2)
-
-        # Active Layers Table Inspector (Bottom of right panel)
-        layer_box = StudioGroup(self.right_panel, text="LAYER ĐANG HIỂN THỊ  ·  Nhấn cột Hiện để bật / tắt", bg=THEME["bg_panel"], fg=THEME["accent_cyan"], font=(FONT_FAMILY, 9, "bold"), padx=6, pady=4)
-        layer_box.pack(side="bottom", fill="x", pady=(4, 0))
-
-        self.layer_tree = ttk.Treeview(
-            layer_box,
-            columns=("visible", "track", "name", "scale", "position", "status"),
-            show="headings",
-            height=4
-        )
-        self.layer_tree.heading("visible", text="Hiện")
-        self.layer_tree.heading("track", text="Track")
-        self.layer_tree.heading("name", text="Tên Clip / Asset")
-        self.layer_tree.heading("scale", text="Scale")
-        self.layer_tree.heading("position", text="Tọa Độ (X, Y)")
-        self.layer_tree.heading("status", text="Trạng Thái Khung Hình")
-
-        self.layer_tree.column("visible", width=42, anchor="center")
-        self.layer_tree.column("track", width=60, anchor="center")
-        self.layer_tree.column("name", width=160, minwidth=100, stretch=True)
-        self.layer_tree.column("scale", width=65, anchor="center")
-        self.layer_tree.column("position", width=105, anchor="center")
-        self.layer_tree.column("status", width=110, minwidth=90, anchor="center")
-        self.layer_tree.pack(side="left", fill="both", expand=True)
-        layer_scroll = ttk.Scrollbar(layer_box, orient="vertical", command=self.layer_tree.yview)
-        layer_scroll.pack(side="right", fill="y")
-        self.layer_tree.configure(yscrollcommand=layer_scroll.set)
-        self.layer_tree.bind("<ButtonRelease-1>", self._on_layer_tree_click)
 
     # --------------------------------------------------------------------------
     # BOTTOM VISUAL TIMELINE BAR
@@ -1081,7 +1026,7 @@ class CapCutStudioDesktopApp:
 
         timeline_body = tk.Frame(timeline_frame, bg=THEME["timeline_bg"])
         timeline_body.pack(fill="both", expand=True)
-        self.timeline_canvas = tk.Canvas(timeline_body, bg=THEME["timeline_bg"], height=160, highlightthickness=0)
+        self.timeline_canvas = tk.Canvas(timeline_body, bg=THEME["timeline_bg"], height=124, highlightthickness=0)
         timeline_scroll = ttk.Scrollbar(timeline_body, orient="vertical", command=self.timeline_canvas.yview)
         timeline_scroll.pack(side="right", fill="y")
         self.timeline_canvas.configure(yscrollcommand=timeline_scroll.set)

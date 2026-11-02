@@ -37,7 +37,13 @@ desktop_app.CapCutStudioDesktopApp._refresh_projects = lambda self: None
 root = tk.Tk()
 app = desktop_app.CapCutStudioDesktopApp(root)
 root.geometry(f"{min(1440, root.winfo_screenwidth())}x{min(940, root.winfo_screenheight() - 90)}+0+25")
-root.report_callback_exception = lambda *args: os._exit(1)
+def callback_error(*args):
+    import traceback
+    traceback.print_exception(*args)
+    os._exit(1)
+root.report_callback_exception = callback_error
+subprocess.run(["defaults", "write", "com.apple.dock", "autohide", "-bool", "true"], check=True)
+subprocess.run(["killall", "Dock"], check=False)
 app.proj_combo["values"] = ["Product campaign / 20 layers"]
 app.proj_combo.current(0)
 app.current_project = {
