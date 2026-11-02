@@ -85,7 +85,7 @@ def capture():
     import sys
     sys.frozen = True
     updater.find_update = lambda **kwargs: {
-        "version": "0.2.0-preview.4",
+        "version": "1.0.1",
         "notes": "Bản cập nhật mới\n\n• Cải thiện trình xem video\n• Sửa lỗi và tối ưu hiệu năng",
         "url": "https://github.com/DevonReyesDavidJR/capcut-keyframe-studio/releases",
     }

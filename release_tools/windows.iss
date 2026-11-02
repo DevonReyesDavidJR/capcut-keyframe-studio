@@ -2,7 +2,7 @@
 [Setup]
 AppId={{8F7AA107-5243-47B9-907B-D54F9BA52726}
 AppName={#AppName}
-AppVersion=0.2.0
+AppVersion=1.0.0
 DefaultDirName={localappdata}\Programs\CapCutKeyframeStudio
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest

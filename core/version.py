@@ -1,2 +1,2 @@
-APP_VERSION = "0.2.0-preview.4"
+APP_VERSION = "1.0.0"
 REPOSITORY = "DevonReyesDavidJR/capcut-keyframe-studio"

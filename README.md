@@ -90,6 +90,18 @@ Việc đặt từng điểm keyframe trên CapCut theo cách thủ công (để
 
 ## 🚀 Hướng Dẫn Cài Đặt & Sử Dụng (Quick Start)
 
+### Cách nhanh nhất: tải bộ cài
+Vào [Releases](https://github.com/DevonReyesDavidJR/capcut-keyframe-studio/releases/latest) và tải:
+- **macOS Apple Silicon (M1/M2/M3/M4)**: `CapCut-Keyframe-Studio-macOS-arm64.dmg`
+- **macOS Intel**: `CapCut-Keyframe-Studio-macOS-x86_64.dmg`
+- **Windows**: `CapCut-Keyframe-Studio-Windows-Setup.exe`
+
+Bộ cài đã kèm sẵn Python và Pillow. Chỉ cần cài thêm **FFmpeg** (`brew install ffmpeg` trên macOS, `winget install --id Gyan.FFmpeg --exact` trên Windows).
+Bản macOS chưa được Apple ký/notarize: lần đầu mở, vào **System Settings → Privacy & Security** và bấm **Open Anyway**.
+Sau khi cài, nút **Cập nhật** trong app sẽ tự tải các phiên bản mới.
+
+### Chạy từ mã nguồn
+
 **Yêu cầu:**
 - **Python 3.8+**
 - **Pillow** cho chế độ Desktop (`run_mac.sh` / `run_win.bat` tự cài ở lần chạy đầu, hoặc `python3 -m pip install -r requirements.txt`). Nếu thiếu Pillow, tool tự chuyển sang chế độ Web (chỉ cần thư viện chuẩn Python).

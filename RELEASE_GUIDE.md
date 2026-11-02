@@ -1,4 +1,4 @@
-# CapCut Keyframe Studio 0.2 Preview
+# CapCut Keyframe Studio 1.0
 
 ## Windows
 Run CapCut-Keyframe-Studio-Windows-Setup.exe. The installer adds Desktop and local Web shortcuts to the Start menu. Python is bundled.
@@ -13,7 +13,7 @@ Restart the app after installation.
 Choose the DMG matching your processor (arm64 for Apple Silicon, x86_64 for Intel).
 Drag the app to Applications. Python and Pillow are bundled.
 Install FFmpeg using Homebrew: `brew install ffmpeg`.
-The preview builds are unsigned and not notarized. macOS may require approval in System Settings > Privacy & Security.
+The macOS builds are unsigned and not notarized. macOS may require approval in System Settings > Privacy & Security.
 
 To open the local Web edition from an installed app:
 ```sh
