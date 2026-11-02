@@ -28,6 +28,25 @@ def has_desktop_dependencies() -> bool:
         return False
 
 def main():
+    # Finder-launched apps do not inherit a shell's Homebrew PATH.
+    extra_paths = [p for p in ("/opt/homebrew/bin", "/usr/local/bin") if os.path.isdir(p)]
+    os.environ["PATH"] = os.pathsep.join(extra_paths + [os.environ.get("PATH", "")])
+
+    if "--self-test" in sys.argv:
+        from pathlib import Path
+        import tkinter as tk
+        import desktop_app
+        import server
+        root = tk.Tk()
+        root.withdraw()
+        desktop_app.CapCutAdapter.list_projects = lambda self: []
+        app = desktop_app.CapCutStudioDesktopApp(root)
+        root.update_idletasks()
+        assert app.preview_canvas.winfo_exists()
+        assert (Path(server.BASE_DIR) / "web" / "index.html").is_file()
+        root.destroy()
+        return
+
     if "--web" in sys.argv or not has_desktop_dependencies():
         import time
         import webbrowser

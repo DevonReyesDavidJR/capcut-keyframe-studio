@@ -107,7 +107,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 try:
                     with open(file_path, "rb") as f:
                         data = f.read()
-                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    mime = {".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
                     if len(_frame_cache) < 400:
                         _frame_cache[cache_key] = (data, mime)
                     self.send_response(200)
@@ -129,7 +129,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                     "-ss", f"{time_s:.3f}",
                     "-i", file_path,
                     "-vframes", "1",
-                    "-vf", f"scale={width}:{height}",
+                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1",
                     "-f", "image2",
                     "-c:v", "mjpeg",
                     "-strict", "-1",
@@ -146,7 +146,7 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                             "-ss", "0.000",
                             "-i", file_path,
                             "-vframes", "1",
-                            "-vf", f"scale={width}:{height}",
+                            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1",
                             "-f", "image2",
                             "-c:v", "mjpeg",
                             "-strict", "-1",
