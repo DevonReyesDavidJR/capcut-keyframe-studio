@@ -37,13 +37,23 @@ class UpdateDialog(tk.Toplevel):
         self.status = tk.Label(self, text="", bg=theme["bg_panel"], fg=theme["text_main"],
                                wraplength=470, justify="left", font=(font, 11))
         self.status.pack(anchor="w", padx=24, pady=(0, 10))
-        self.progress = ttk.Progressbar(self, maximum=100)
+        style = ttk.Style(self)
+        style.configure("Update.Horizontal.TProgressbar",
+            troughcolor=theme["bg_card"], background=theme["accent_cyan"],
+            bordercolor=theme["bg_panel"], lightcolor=theme["accent_cyan"],
+            darkcolor=theme["accent_cyan"], borderwidth=0, thickness=6)
+        style.configure("Update.TButton", background=theme["accent_cyan"], foreground="#102033",
+            bordercolor=theme["accent_cyan"], lightcolor=theme["accent_cyan"],
+            darkcolor=theme["accent_cyan"], padding=10)
+        style.map("Update.TButton", background=[("active", "#a3ceff"), ("disabled", theme["bg_card"])],
+                  foreground=[("disabled", theme["text_muted"])])
+        self.progress = ttk.Progressbar(self, maximum=100, style="Update.Horizontal.TProgressbar")
         self.progress.pack(fill="x", padx=24, pady=(0, 12))
-        self.notes = tk.Text(self, height=7, wrap="word", relief="flat", borderwidth=0,
+        self.notes = tk.Text(self, height=7, wrap="word", relief="flat", borderwidth=0, highlightthickness=0,
             bg=theme["bg_card"], fg=theme["text_sub"], padx=12, pady=10, font=(font, 10))
         self.notes.pack(fill="both", expand=True, padx=24)
         self.notes.configure(state="disabled")
-        self.action = ttk.Button(self, text="Kiểm tra cập nhật", command=self.check)
+        self.action = ttk.Button(self, text="Kiểm tra cập nhật", command=self.check, style="Update.TButton")
         self.action.pack(fill="x", padx=24, pady=14)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.after(50, self.check)
@@ -74,6 +84,7 @@ class UpdateDialog(tk.Toplevel):
             return
         self.installer = None
         self.busy("check", "Đang kiểm tra phiên bản trên GitHub…")
+        self.progress.pack(fill="x", padx=24, pady=(0, 12), before=self.notes)
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         include = self.preview.get()
@@ -81,6 +92,7 @@ class UpdateDialog(tk.Toplevel):
 
     def download(self):
         self.busy("download", "Đang tải bộ cài từ GitHub…")
+        self.progress.pack(fill="x", padx=24, pady=(0, 12), before=self.notes)
         self.progress.configure(mode="determinate", value=0)
         self.worker(lambda: updater.download(self.update_info,
                     progress=lambda value: self.events.put(("progress", value)),
@@ -106,6 +118,7 @@ class UpdateDialog(tk.Toplevel):
                 self.action.configure(state="normal")
                 self.phase = "idle"
                 if kind == "checked":
+                    self.progress.pack_forget()
                     self.update_info = value
                     if not value:
                         self.status.configure(text="Bạn đang dùng phiên bản mới nhất có bộ cài phù hợp.")
