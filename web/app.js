@@ -25,6 +25,7 @@ let cachedLayerImages = {};
 let pathDrawMode = false;
 let pathPoints = [];
 let pathSmoothed = [];   // [[x, y], ...] returned by /api/smooth_path
+let pathOffset = [0, 0]; // Shift applied by centring, so the raw stroke is drawn alongside
 let pathIsDrawing = false;
 let pathStrokeStart = 0;
 let pathSmoothTimer = null;
@@ -2681,6 +2682,7 @@ function setupMotionPathListeners() {
     requestSmoothedPath();
   });
   document.getElementById("btnApplyMotionPath").addEventListener("click", handleApplyMotionPath);
+  document.getElementById("chkPathCenter").addEventListener("change", requestSmoothedPath);
 
   // Pointer events cover mouse, trackpad, pen and touch on macOS and Windows alike
   canvas.addEventListener("pointerdown", (e) => {
@@ -2695,6 +2697,7 @@ function setupMotionPathListeners() {
     pathIsDrawing = true;
     pathStrokeStart = performance.now();
     pathSmoothed = [];
+    pathOffset = [0, 0];
     pathPoints = [pointerToCapCut(e, canvas)];
     updateMasterPreview();
   });
@@ -2761,11 +2764,17 @@ function requestSmoothedPath() {
       const res = await fetch("/api/smooth_path", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points: pathPoints, smoothing: pathSmoothingValue(), aspect: projectAspect() })
+        body: JSON.stringify({
+          points: pathPoints,
+          smoothing: pathSmoothingValue(),
+          aspect: projectAspect(),
+          center: document.getElementById("chkPathCenter").checked
+        })
       });
       const data = await res.json();
       if (data.status === "success") {
         pathSmoothed = data.points;
+        pathOffset = data.offset || [0, 0];
         updateMasterPreview();
       }
     } catch (err) {
@@ -2788,7 +2797,7 @@ function drawMotionPathOverlay(ctx, cw, ch) {
   ctx.setLineDash(pathSmoothed.length ? [3, 3] : []);
   ctx.beginPath();
   pathPoints.forEach(([x, y], i) => {
-    const [px, py] = toPx(x, y);
+    const [px, py] = toPx(x + pathOffset[0], y + pathOffset[1]);
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   });
   ctx.stroke();
@@ -2860,7 +2869,8 @@ async function handleApplyMotionPath() {
         targets: targets,
         points: pathPoints,
         smoothing: pathSmoothingValue(),
-        timing: document.getElementById("selectPathTiming").value
+        timing: document.getElementById("selectPathTiming").value,
+        center: document.getElementById("chkPathCenter").checked
       })
     });
     const data = await res.json();

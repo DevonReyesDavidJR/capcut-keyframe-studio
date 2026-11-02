@@ -800,7 +800,7 @@
                   <li>Click chọn clip trên Timeline bên dưới.</li>
                   <li>Bấm <b>Bắt Đầu Vẽ</b>, rồi giữ chuột kéo trên <b>Trình Phát Đa Lớp</b> bên phải để vẽ đường đi của tâm clip.</li>
                   <li>Kéo <b>Độ mượt</b>: đường xanh là đường sẽ được dùng (🟢 điểm đầu, 🔴 điểm cuối).</li>
-                  <li>Bấm <b>Áp Dụng</b>. Keyframe Vị trí X/Y được tạo tự động.</li>
+                  <li>Bấm <b>Áp Dụng</b>. Clip chạy hết đường vẽ từ frame đầu đến frame cuối, tốc độ tự điều chỉnh.</li>
                 </ol>
 
                 <div class="flex items-center gap-2 mt-4">
@@ -822,11 +822,17 @@
                 <div class="mt-4">
                   <label class="text-sm" for="selectPathTiming">Nhịp chạy:</label>
                   <select id="selectPathTiming" class="select-box w-full mt-1">
+                    <option value="auto" selected>Tự động (chậm ở khúc cua, mượt đầu &amp; cuối)</option>
                     <option value="ease">Mượt đầu &amp; cuối (Ease In-Out)</option>
                     <option value="constant">Tốc độ đều suốt đường</option>
                     <option value="drawn">Theo tốc độ vẽ tay</option>
                   </select>
                 </div>
+
+                <label class="flex items-center gap-2 text-sm mt-4">
+                  <input type="checkbox" id="chkPathCenter" checked>
+                  Đặt đường đi vào giữa khung hình
+                </label>
 
                 <button class="btn btn-primary mt-6 w-full" id="btnApplyMotionPath">
                   🚀 ÁP DỤNG ĐƯỜNG ĐI CHO CLIP ĐÃ CHỌN

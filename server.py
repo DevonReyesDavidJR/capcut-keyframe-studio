@@ -729,7 +729,17 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 smoothing=float(payload.get("smoothing", 0.5)),
                 aspect=float(payload.get("aspect", 9 / 16.0))
             )
-            self._send_json({"status": "success", "points": [[round(x, 4), round(y, 4)] for x, y, _ in smoothed]})
+            # When centring, also report the shift so the UI can move the raw stroke with it
+            offset = [0.0, 0.0]
+            if payload.get("center", True) and smoothed:
+                centered = KeyframeEngine.center_path(smoothed)
+                offset = [centered[0][0] - smoothed[0][0], centered[0][1] - smoothed[0][1]]
+                smoothed = centered
+            self._send_json({
+                "status": "success",
+                "points": [[round(x, 4), round(y, 4)] for x, y, _ in smoothed],
+                "offset": [round(offset[0], 4), round(offset[1], 4)]
+            })
         except Exception as e:
             self._send_json({"status": "error", "message": str(e)}, 400)
 
@@ -737,9 +747,10 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
         folder_name = payload.get("folder_name", "")
         targets = payload.get("targets", [])
         smoothing = float(payload.get("smoothing", 0.5))
-        timing = payload.get("timing", "ease")
-        if timing not in ("ease", "constant", "drawn"):
-            timing = "ease"
+        timing = payload.get("timing", "auto")
+        if timing not in ("auto", "ease", "constant", "drawn"):
+            timing = "auto"
+        center_on_clip = bool(payload.get("center", True))
 
         try:
             points = self._parse_path_points(payload.get("points"))
@@ -773,8 +784,13 @@ class CapCutAPIHandler(SimpleHTTPRequestHandler):
                 dur_us = seg.get("target_timerange", {}).get("duration", 0)
                 if dur_us <= 0:
                     continue
+                # Centre the path on the clip's own resting position (CapCut clip.transform)
+                center = None
+                if center_on_clip:
+                    transform = (seg.get("clip") or {}).get("transform") or {}
+                    center = (float(transform.get("x", 0.0)), float(transform.get("y", 0.0)))
                 groups = KeyframeEngine.generate_motion_path_keyframes(
-                    points, dur_us, fps=fps, smoothing=smoothing, timing=timing, aspect=aspect
+                    points, dur_us, fps=fps, smoothing=smoothing, timing=timing, aspect=aspect, center=center
                 )
                 self._apply_groups_to_segment(seg, groups, replace_existing=True)
                 modified_count += 1

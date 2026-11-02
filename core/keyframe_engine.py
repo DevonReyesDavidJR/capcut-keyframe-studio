@@ -648,6 +648,58 @@ class KeyframeEngine:
             path = smoothed
         return path
 
+    @staticmethod
+    def center_path(
+        path: List[Tuple[float, float, float]],
+        center: Tuple[float, float] = (0.0, 0.0)
+    ) -> List[Tuple[float, float, float]]:
+        """Shifts a path so the middle of its bounding box sits on `center` (default: frame center)."""
+        if not path:
+            return path
+        xs = [p[0] for p in path]
+        ys = [p[1] for p in path]
+        dx = center[0] - (min(xs) + max(xs)) / 2.0
+        dy = center[1] - (min(ys) + max(ys)) / 2.0
+        return [(x + dx, y + dy, t) for x, y, t in path]
+
+    @staticmethod
+    def _auto_timing_params(path: List[Tuple[float, float, float]], aspect: float) -> List[float]:
+        """
+        Path parameter (0..1) per point for automatic speed: the clip slows down through sharp
+        turns, moves faster on straight stretches and eases in/out at both ends. The result is
+        normalised so the whole path always fills exactly the clip duration.
+        """
+        n = len(path)
+        seg_len = [math.hypot((path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]) for i in range(n - 1)]
+
+        # Turning angle at each interior point (radians)
+        turn = [0.0] * n
+        for i in range(1, n - 1):
+            ax, ay = (path[i][0] - path[i - 1][0]) * aspect, path[i][1] - path[i - 1][1]
+            bx, by = (path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]
+            if math.hypot(ax, ay) > 1e-9 and math.hypot(bx, by) > 1e-9:
+                turn[i] = abs(math.atan2(ax * by - ay * bx, ax * bx + ay * by))
+
+        # Spread each turn over its neighbourhood so slowing starts before the corner
+        radius = max(1, n // 40)
+        spread = []
+        for i in range(n):
+            lo, hi = max(0, i - radius), min(n, i + radius + 1)
+            spread.append(sum(turn[lo:hi]))
+
+        total_len = sum(seg_len) or 1.0
+        times = [0.0]
+        walked = 0.0
+        for i in range(n - 1):
+            curvature = (spread[i] + spread[i + 1]) / 2.0
+            speed = 1.0 / (1.0 + 4.0 * curvature)          # sharp corner -> slower
+            walked += seg_len[i]
+            u = walked / total_len
+            ease = min(1.0, u / 0.12, (1.0 - u + seg_len[i] / total_len) / 0.12)
+            speed *= 0.35 + 0.65 * max(0.0, ease)            # soft start and stop
+            times.append(times[-1] + seg_len[i] / max(speed, 1e-3))
+        return [t / times[-1] for t in times]
+
     @classmethod
     def generate_motion_path_keyframes(
         cls,
@@ -655,16 +707,20 @@ class KeyframeEngine:
         duration_us: int,
         fps: int = 30,
         smoothing: float = 0.5,
-        timing: str = "ease",          # "ease" (ease in-out), "constant" (constant speed), "drawn" (replay hand speed)
+        timing: str = "auto",          # "auto" (slow on turns, eased ends), "ease", "constant", "drawn" (replay hand speed)
         aspect: float = 9 / 16.0,
-        tolerance: float = 0.002       # Max deviation (position units) allowed when dropping redundant keyframes
+        tolerance: float = 0.002,      # Max deviation (position units) allowed when dropping redundant keyframes
+        center: Optional[Tuple[float, float]] = None  # Re-centre the path on this point (None = keep where drawn)
     ) -> List[Dict[str, Any]]:
         """
-        Builds KFTypePositionX / KFTypePositionY keyframes that move the clip along a hand-drawn path
-        over the whole clip duration. The stroke is smoothed, sampled every frame, then simplified so
-        only the keyframes needed to stay within `tolerance` of the smooth path are kept.
+        Builds KFTypePositionX / KFTypePositionY keyframes that move the clip along a hand-drawn path.
+        The first point of the path is reached on the clip's first frame and the last point on its last
+        frame. The stroke is smoothed, optionally centred, sampled every frame, then simplified so only
+        the keyframes needed to stay within `tolerance` of the smooth path are kept.
         """
         path = cls.smooth_motion_path(points, smoothing, aspect)
+        if center is not None:
+            path = cls.center_path(path, center)
         dists = [0.0]
         for i in range(len(path) - 1):
             dists.append(dists[-1] + math.hypot((path[i + 1][0] - path[i][0]) * aspect, path[i + 1][1] - path[i][1]))
@@ -672,7 +728,9 @@ class KeyframeEngine:
             raise ValueError("Đường vẽ quá ngắn. Hãy kéo chuột vẽ một đường dài hơn.")
 
         # Path parameter (0..1) for each point: arc length, or drawing time for "drawn"
-        if timing == "drawn" and path[-1][2] - path[0][2] > 1e-3:
+        if timing == "auto":
+            params = cls._auto_timing_params(path, aspect)
+        elif timing == "drawn" and path[-1][2] - path[0][2] > 1e-3:
             t0, t1 = path[0][2], path[-1][2]
             params = [(p[2] - t0) / (t1 - t0) for p in path]
             for i in range(1, len(params)):

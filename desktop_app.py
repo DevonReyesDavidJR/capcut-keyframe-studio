@@ -827,7 +827,8 @@ class CapCutStudioDesktopApp:
             "2. Bấm 'Bắt Đầu Vẽ' rồi giữ chuột kéo trên màn hình preview\n"
             "    để vẽ đường đi của tâm clip (từ điểm đầu đến điểm cuối).\n"
             "3. Kéo thanh 'Độ mượt' - đường xanh là đường sẽ được dùng.\n"
-            "4. Bấm 'Áp Dụng'. Keyframe Vị trí X/Y được tạo tự động."
+            "4. Bấm 'Áp Dụng'. Clip chạy hết đường vẽ từ frame đầu đến\n"
+            "    frame cuối, tốc độ tự điều chỉnh theo độ cong."
         )
         tk.Label(info_box, text=steps, bg=THEME["bg_card"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), justify="left").pack(anchor="w", pady=4)
 
@@ -850,12 +851,20 @@ class CapCutStudioDesktopApp:
         tk.Label(row2, text="Nhịp chạy:", bg=THEME["bg_panel"], fg=THEME["text_main"]).pack(side="left", padx=4)
         self.path_timing_combo = ttk.Combobox(row2, state="readonly", width=30)
         self.path_timing_combo["values"] = [
+            "Tự động (chậm ở khúc cua, mượt đầu & cuối)",
             "Mượt đầu & cuối (Ease In-Out)",
             "Tốc độ đều suốt đường",
             "Theo tốc độ vẽ tay"
         ]
         self.path_timing_combo.current(0)
         self.path_timing_combo.pack(side="left", padx=4)
+
+        self.path_center_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            group_opt, text="Đặt đường đi vào giữa khung hình", variable=self.path_center_var,
+            bg=THEME["bg_panel"], fg=THEME["text_main"], selectcolor=THEME["bg_card"],
+            activebackground=THEME["bg_panel"], command=self._draw_path_overlay
+        ).pack(anchor="w", pady=(6, 0))
 
         self.lbl_path_status = tk.Label(group_opt, text="Chưa có nét vẽ.", bg=THEME["bg_panel"], fg=THEME["text_muted"], font=(FONT_FAMILY, 9), anchor="w")
         self.lbl_path_status.pack(fill="x", pady=(6, 0))
@@ -936,10 +945,17 @@ class CapCutStudioDesktopApp:
         self.preview_canvas.delete("path_overlay")
         if len(self.path_points) < 2:
             return
-        raw = [c for p in self.path_points for c in self._capcut_to_canvas(p[0], p[1])]
+        smooth = KeyframeEngine.smooth_motion_path(self.path_points, self.path_smooth_scale.get() / 100.0, self._path_aspect())
+        dx = dy = 0.0
+        if self.path_center_var.get() and smooth:
+            centered = KeyframeEngine.center_path(smooth)
+            dx, dy = centered[0][0] - smooth[0][0], centered[0][1] - smooth[0][1]
+            smooth = centered
+
+        # Raw stroke moved by the same shift, so it lines up with the path that will be used
+        raw = [c for p in self.path_points for c in self._capcut_to_canvas(p[0] + dx, p[1] + dy)]
         self.preview_canvas.create_line(*raw, fill="#6b7280", width=1, dash=(3, 3), tags="path_overlay")
 
-        smooth = KeyframeEngine.smooth_motion_path(self.path_points, self.path_smooth_scale.get() / 100.0, self._path_aspect())
         if len(smooth) >= 2:
             flat = [c for p in smooth for c in self._capcut_to_canvas(p[0], p[1])]
             self.preview_canvas.create_line(*flat, fill=THEME["accent_cyan"], width=3, smooth=True, tags="path_overlay")
@@ -974,7 +990,7 @@ class CapCutStudioDesktopApp:
         if not targets:
             return
 
-        timing = {0: "ease", 1: "constant", 2: "drawn"}.get(self.path_timing_combo.current(), "ease")
+        timing = {0: "auto", 1: "ease", 2: "constant", 3: "drawn"}.get(self.path_timing_combo.current(), "auto")
         fps = int(data.get("fps", 30) or 30)
         tracks = data.get("tracks", [])
         applied, kf_count = 0, 0
@@ -984,10 +1000,15 @@ class CapCutStudioDesktopApp:
                 du_us = seg.get("target_timerange", {}).get("duration", 0)
                 if du_us <= 0:
                     continue
+                # Centre on the clip's own resting position (CapCut clip.transform)
+                center = None
+                if self.path_center_var.get():
+                    transform = (seg.get("clip") or {}).get("transform") or {}
+                    center = (float(transform.get("x", 0.0)), float(transform.get("y", 0.0)))
                 groups = KeyframeEngine.generate_motion_path_keyframes(
                     self.path_points, du_us, fps=fps,
                     smoothing=self.path_smooth_scale.get() / 100.0,
-                    timing=timing, aspect=self._path_aspect()
+                    timing=timing, aspect=self._path_aspect(), center=center
                 )
                 self._merge_keyframe_groups(seg, groups)
                 applied += 1
